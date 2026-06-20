@@ -53,18 +53,32 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 3. LOADER DATA SINKRONISASI
+# 3. LOADER DATA CACHING (ANTI-LEMOT & HEMAT KUOTA API)
 # ==========================================
-def fetch_table(table_name):
+@st.cache_data(ttl=600)  
+def fetch_cloud_data(table_name):
+    """Menarik data matang hasil kompilasi skrip dragon_fire.py"""
     try:
-        return pd.read_sql(f'SELECT * FROM "{table_name}"', engine)
-    except:
+        query = f'SELECT * FROM "{table_name}"'
+        df = pd.read_sql(query, engine)
+        return df
+    except Exception:
         return pd.DataFrame()
 
-df_screener = fetch_table('screener_live')
-df_watchlist = fetch_table('watchlist_live')
-df_history = fetch_table('screener_history')
+# 🌟 KUNCI PERBAIKAN: Kamus pemeta untuk menormalisasi huruf kecil dari PostgreSQL
+peta_kolom = {
+    'ticker': 'Ticker', 'close': 'Close', 'support': 'Support', 'resistance': 'Resistance',
+    'bb_width_str': 'BB_Width_Str', 'vol_ratio': 'Vol_Ratio', 'vol_velocity': 'Vol_Velocity',
+    'cmf': 'CMF', 'ud_vol_ratio': 'UD_Vol_Ratio', 'hari_ke_breakout': 'Hari_Ke_Breakout',
+    'potensial_upsize': 'Potensial_Upsize', 'cvi': 'CVI', 
+    'analisis_kesimpulan': 'Analisis_Kesimpulan', 'rekomendasi_action': 'Rekomendasi_Action',
+    'tanggal_scan': 'Tanggal_Scan'
+}
 
+# Load Data dari Kedua Tabel Inti Awan & Langsung Ubah Judulnya
+df_screener = fetch_cloud_data('screener_live').rename(columns=peta_kolom)
+df_watchlist = fetch_cloud_data('watchlist_live').rename(columns=peta_kolom)
+df_history = fetch_cloud_data('screener_history').rename(columns=peta_kolom)
 # ==========================================
 # 4. ANTARMUKA UTAMA DASBOR INTERAKTIF
 # ==========================================
