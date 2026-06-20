@@ -9,6 +9,7 @@ from datetime import datetime
 import warnings
 import mplfinance as mpf
 from sqlalchemy import create_engine  # 🌟 NEW: KONEKTOR DATABASE AWAN
+import urllib.parse
 
 warnings.filterwarnings('ignore')
 
@@ -31,18 +32,53 @@ os.makedirs(FOLDER_WATCHLIST, exist_ok=True)
 
 FILE_MASTER_EXCEL = os.path.join(FOLDER_OUTPUT, 'Dragon_Screener_Master.xlsx')
 
-# 🌟 KONEKSI DATABASE SUPABASE/POSTGRESQL VIA ENVIRONMENT VARIABLE
-DATABASE_URL = os.getenv("DATABASE_URL")  # Akan diisi di rahasia GitHub/Cloud Server
-IS_CLOUD = DATABASE_URL is not None
+def sanitize_db_url(url):
+    """Mengamankan kata sandi yang mengandung karakter khusus seperti @ atau & agar tidak merusak host"""
+    if not url: return url
+    prefix = "postgresql://"
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", prefix, 1)
+    if url.startswith(prefix):
+        rem = url[len(prefix):]
+        auth_part, path_part = rem.rsplit('/', 1) if '/' in rem else (rem, "")
+        if '@' in auth_part:
+            creds, host_port = auth_part.rsplit('@', 1)
+            if ':' in creds:
+                user, password = creds.split(':', 1)
+                # URL-encode password agar karakter khusus terbaca sempurna oleh driver SQL
+                encoded_pass = urllib.parse.quote_plus(password)
+                return f"{prefix}{user}:{encoded_pass}@{host_port}/{path_part}"
+    return url
+
+# 🌟 AMBIL DATA DARI ENVIRONMENT SERVER CLOUD
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# 🌟 FALLBACK PINTAR: Jika di laptop lokal kosong, otomatis pinjam dari .streamlit/secrets.toml
+if not DATABASE_URL or not DATABASE_URL.strip():
+    path_secrets = os.path.join('.streamlit', 'secrets.toml')
+    if os.path.exists(path_secrets):
+        try:
+            with open(path_secrets, 'r') as f:
+                for line in f:
+                    if 'DATABASE_URL' in line and '=' in line:
+                        DATABASE_URL = line.split('=')[1].strip().strip('"').strip("'")
+                        break
+        except:
+            pass
+
+# 🌟 PROTEKSI KETAT: Memastikan string koneksi benar-benar valid dan tidak kosong
+DATABASE_URL = sanitize_db_url(DATABASE_URL)
+IS_CLOUD = bool(DATABASE_URL and DATABASE_URL.strip())
 
 if IS_CLOUD:
-    # Memastikan format dialek postgresql untuk SQLAlchemy kompatibel
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    db_engine = create_engine(DATABASE_URL)
-    print("🌐 Cloud Mode Terdeteksi: Koneksi Database SQL Terjalin Aman.")
+    try:
+        db_engine = create_engine(DATABASE_URL)
+        print("🌐 Cloud Hybrid Mode Terdeteksi: Koneksi Penembakan Data ke Supabase Siap.")
+    except Exception as e:
+        print(f"❌ Gagal Menginisialisasi Engine Database: {e}")
+        IS_CLOUD = False
 else:
-    print("💻 Local Mode Aktif: Data akan disimpan ke file Excel konvensional.")
+    print("💻 Local Mode Aktif: Data hanya akan disimpan ke file Excel konvensional.")
 
 # ==========================================
 # 2. ENGINE ANALISIS & ADVANCED ACTION
@@ -99,71 +135,45 @@ def build_features(df, ticker_name):
     df['Target_Upsize'] = upsize_target
     return df
 
-def apply_historical_feedback_loop(df_train, folder_output, dict_df_full):
-    report_files = glob.glob(os.path.join(folder_output, "Dragon_Screener_Master*.csv"))
-    if not report_files: return df_train
-    past_records = []
-    for file in report_files:
-        try:
-            df_past = pd.read_csv(file)
-            if 'Ticker' in df_past.columns and 'Rekomendasi_Action' in df_past.columns:
-                past_records.append(df_past[['Ticker', 'Close', 'Rekomendasi_Action']])
-        except: continue
-    if not past_records: return df_train
-    df_past_compiled = pd.concat(past_records, ignore_index=True)
-    premium_past = df_past_compiled[df_past_compiled['Rekomendasi_Action'].str.contains('BUY', na=False, case=False)]
-    if premium_past.empty: return df_train
-    penalized_tickers = []
-    for ticker in df_train['Ticker'].unique():
-        if ticker in dict_df_full:
-            ticker_past = premium_past[premium_past['Ticker'] == ticker]
-            if not ticker_past.empty:
-                avg_past_price = ticker_past['Close'].mean()
-                current_real_price = dict_df_full[ticker]['Close'].iloc[-1]
-                if current_real_price < (avg_past_price * 0.95):
-                    penalized_tickers.append(ticker)
-    if penalized_tickers:
-        df_train.loc[df_train['Ticker'].isin(penalized_tickers), 'Target_Days'] = 999.0
-        df_train.loc[df_train['Ticker'].isin(penalized_tickers), 'Target_Upsize'] = 0.0
-    return df_train
-
 def generate_kesimpulan(row):
-    status = ""
-    status += "Volum Kering. " if row['Vol_Ratio'] < 0.5 else ("Volum Tinggi. " if row['Vol_Ratio'] > 1.5 else "Volum Normal. ")
-    status += "Akumulasi Kuat. " if row['CMF'] > 0.05 else ("Akumulasi Siluman. " if row['CMF'] > -0.05 else "Distribusi Terdeteksi. ")
-    return status
+    kesimpulan = []
+    if row['Vol_Ratio'] > 1.5: kesimpulan.append("Volum Tinggi.")
+    elif row['Vol_Ratio'] < 0.6: kesimpulan.append("Volum Kering.")
+    else: kesimpulan.append("Volum Normal.")
+    
+    if row['CMF'] > 0.1: kesimpulan.append("Akumulasi Kuat.")
+    elif row['CMF'] > 0: kesimpulan.append("Akumulasi Siluman.")
+    elif row['CMF'] < -0.1: kesimpulan.append("Distribusi Masal.")
+    else: kesimpulan.append("Arus Distribusi Lemah.")
+    return " ".join(kesimpulan)
 
 def rekomendasi_action_mendalam(row):
-    est_days = row['Expected_Days']
-    if est_days > 55.0: return "HINDARI (DISTRIBUSI / TRAP TERDETEKSI)"
-    if row['BB_Width'] <= 0.15 and row['CMF'] > 0.05 and row['UD_Vol_Ratio'] >= 1.5:
-        if est_days <= 36.0: return "ACCUMULATION BUY (NAGA TERBAIK)"
-        elif est_days <= 46.0: return "STEALTH BUY (NYICIL SILUMAN)"
-        else: return "PANTAU (NAGA TIDUR PULAS)"
-    elif row['BB_Width'] <= 0.15 and -0.05 <= row['CMF'] <= 0.05 and row['UD_Vol_Ratio'] >= 2.0:
-        return "STEALTH BUY (NYICIL SILUMAN)"
-    elif row['BB_Width'] > 0.20 and row['Vol_Ratio'] >= 2.0 and row['CMF'] > 0.10:
-        return "FAST TRADE / BREAKOUT SCALPING"
-    elif row['Vol_Ratio'] > 1.5 and row['CMF'] < -0.10:
-        return "HINDARI (BANDAR DISTRIBUSI / DUMP)"
-    else: return "WAIT & SEE (NANTI DULU)"
+    if row['BB_Width'] <= BB_WIDTH_MAX and row['CMF'] > MIN_CMF and row['UD_Vol_Ratio'] >= MIN_UD_RATIO:
+        if row['Vol_Velocity'] > 1.5 and row['Box_Position'] >= 0.7:
+            return "ACCUMULATION BUY (NAGA TERBAIK)"
+        elif row['CMF'] > 0.15 and row['Vol_Ratio'] < 0.8:
+            return "STEALTH BUY (NYICIL SILUMAN)"
+        else:
+            return "PANTAU (NAGA TIDUR PULAS)"
+    return "WAIT & SEE (NANTI DULU)"
 
-def simpan_grafik(df_plot, ticker, kategori):
-    if IS_CLOUD: return "Visual chart diskip di server cloud"
+def simpan_grafik(df, ticker, kategori):
     try:
-        data_plot = df_plot.tail(90).copy()
+        df_chart = df.tail(60).copy()
+        df_chart.set_index('Date', inplace=True)
         apds = [
-            mpf.make_addplot(data_plot['BB_Upper'], color='red', alpha=0.6),
-            mpf.make_addplot(data_plot['BB_Lower'], color='green', alpha=0.6),
-            mpf.make_addplot(data_plot['MA20'], color='blue', alpha=0.6)
+            mpf.make_addplot(df_chart['BB_Upper'], color='red', linestyle='--'),
+            mpf.make_addplot(df_chart['BB_Lower'], color='red', linestyle='--'),
+            mpf.make_addplot(df_chart['MA20'], color='blue')
         ]
         filename = f"{ticker}_{kategori}_{datetime.now().strftime('%Y%m%d')}.png"
         filepath = os.path.join(FOLDER_CHART, filename)
         mc = mpf.make_marketcolors(up='g', down='r', edge='inherit', wick='inherit', volume='in')
         s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=False)
-        mpf.plot(data_plot, type='candle', volume=True, addplot=apds, style=s, savefig=filepath)
+        mpf.plot(df_chart, type='candle', volume=True, addplot=apds, style=s, savefig=filepath)
         return filepath
-    except Exception: return "Gagal membuat visual"
+    except:
+        return "Gagal membuat visual"
 
 # ==========================================
 # 3. MAIN RUNNING ENGINE & TRAINING LOOP
@@ -175,11 +185,18 @@ if not os.path.exists(FILE_TICKER) and os.path.exists('TIcker Saham.csv'):
 if not os.path.exists(FILE_TICKER):
     print(f"❌ Master file ticker '{FILE_TICKER}' tidak ditemukan."); sys.exit()
 
-try: df_ticker = pd.read_csv(FILE_TICKER, sep=None, engine='python')
-except: df_ticker = pd.read_csv(FILE_TICKER)
+try:
+    df_ticker = pd.read_csv(FILE_TICKER, sep=None, engine='python')
+except:
+    try:
+        df_ticker = pd.read_csv(FILE_TICKER, sep=';')
+    except:
+        df_ticker = pd.read_csv(FILE_TICKER)
 
 df_ticker.columns = df_ticker.columns.str.strip()
-target_col = [col for col in df_ticker.columns if str(col).upper() in ['KODE', 'TICKER', 'KODE SAHAM']][0]
+target_keywords = ['KODE', 'TICKER', 'KODE SAHAM', 'CODE', 'SYMBOL', 'SAHAM']
+matched_cols = [col for col in df_ticker.columns if str(col).upper() in target_keywords]
+target_col = matched_cols[0] if matched_cols else df_ticker.columns[0]
 
 DAFTAR_SAHAM = df_ticker[target_col].dropna().astype(str).str.strip().tolist()
 DAFTAR_SAHAM = [t for t in DAFTAR_SAHAM if len(t) == 4 and t.isalpha()]
@@ -211,25 +228,28 @@ for idx, ticker in enumerate(DAFTAR_SAHAM, 1):
         print(f"   ⏳ Progress Fitur: {idx}/{total_tickers} emiten selesai disusun...")
 
 df_train_global = pd.concat(master_train, axis=0, ignore_index=True)
-features = ['BB_Width', 'Vol_Ratio', 'Dist_to_MA20', 'Returns', 'CMF', 'UD_Vol_Ratio', 'CMF_Slope', 'Vol_Velocity', 'BB_Width_Delta', 'Box_Position']
-df_train_global.dropna(subset=features + ['Target_Days', 'Target_Upsize'], inplace=True)
-
-df_train_global = apply_historical_feedback_loop(df_train_global, FOLDER_OUTPUT, dict_df_full)
 df_latest_global = pd.concat(latest_data, axis=0, ignore_index=True)
 
-print(f"\n🧠 Melatih Otak AI Kesatu & Kedua...")
-model_days = RandomForestRegressor(n_estimators=250, max_depth=12, min_samples_leaf=3, random_state=42)
-model_days.fit(df_train_global[features], df_train_global['Target_Days'])
+features = [
+    'BB_Width', 'Vol_Ratio', 'Dist_to_MA20', 'CMF', 'UD_Vol_Ratio',
+    'CMF_Slope', 'Vol_Velocity', 'BB_Width_Delta', 'Box_Position'
+]
 
-model_upsize = RandomForestRegressor(n_estimators=250, max_depth=12, min_samples_leaf=3, random_state=42)
-model_upsize.fit(df_train_global[features], df_train_global['Target_Upsize'])
+X_train = df_train_global[features].fillna(0)
+y_train_days = df_train_global['Target_Days'].fillna(DAYS_LOOKAHEAD + 20)
+y_train_upsize = df_train_global['Target_Upsize'].fillna(0)
 
-df_latest_global['Expected_Days'] = model_days.predict(df_latest_global[features])
-df_latest_global['Expected_Upsize'] = model_upsize.predict(df_latest_global[features])
+print("🧠 Melatih Otak AI Kesatu & Kedua...")
+model_days = RandomForestRegressor(n_estimators=100, random_state=42).fit(X_train, y_train_days)
+model_upsize = RandomForestRegressor(n_estimators=100, random_state=42).fit(X_train, y_train_upsize)
+
+X_latest = df_latest_global[features].fillna(0)
+df_latest_global['Expected_Days'] = model_days.predict(X_latest)
+df_latest_global['Expected_Upsize'] = model_upsize.predict(X_latest)
 
 dragon_candidates = df_latest_global[
-    (df_latest_global['BB_Width'] <= BB_WIDTH_MAX) &
-    (df_latest_global['CMF'] >= MIN_CMF) &
+    (df_latest_global['BB_Width'] <= BB_WIDTH_MAX) & 
+    (df_latest_global['CMF'] > MIN_CMF) & 
     (df_latest_global['UD_Vol_Ratio'] >= MIN_UD_RATIO)
 ].copy()
 
@@ -259,10 +279,8 @@ if not dragon_candidates.empty:
     # 🌟 PERBAIKAN: INJEKSI DATA LIVE & HISTORI HARIAN KE DATABASE AWAN
     if IS_CLOUD:
         try:
-            # 1. Update data live untuk metrik hari ini
             df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
             
-            # 2. Tambah rekam jejak ke tabel histori (Akan bertambah terus ke bawah setiap hari)
             df_histori = df_excel_simple.copy()
             df_histori['Tanggal_Scan'] = datetime.now().strftime('%Y-%m-%d')
             df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
@@ -271,7 +289,6 @@ if not dragon_candidates.empty:
         except Exception as e: 
             print(f"❌ DATABASE ERROR: {e}")
         
-    # BACKUP LOKAL EXCEL TETAP TERJAGA
     sheet_name_hari_ini = datetime.now().strftime('%Y-%B-%d')
     try:
         with pd.ExcelWriter(FILE_MASTER_EXCEL, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
@@ -284,7 +301,6 @@ if not dragon_candidates.empty:
 # ==========================================
 # 4. MONITOR COMMAND CENTER INTERAKTIF / AUTOMATION BYPASS
 # ==========================================
-# 🌟 NEW: DETEKTOR OTOMATIS GITHUB ACTIONS (BYPASS INPUT MENU UNTUK SERVER CLOUD)
 RUN_AUTOMATED_WATCHLIST = os.getenv("GITHUB_ACTIONS") == "true" or IS_CLOUD
 
 if RUN_AUTOMATED_WATCHLIST:
@@ -326,7 +342,6 @@ if RUN_AUTOMATED_WATCHLIST:
     print("💤 Seluruh proses cloud selesai. Sistem dimatikan secara bersih.")
     sys.exit()
 
-# BENTENG INTERAKTIF LOKAL (Hanya berjalan jika Anda running manual di Laptop)
 print("\n" + "="*90)
 print("💻 COMMAND CENTER INTERAKTIF LOCAL MODE")
 print("• Ketik 'WATCH'  : Evaluasi massal & ekspor otomatis")
