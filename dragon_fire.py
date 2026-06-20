@@ -33,8 +33,12 @@ os.makedirs(FOLDER_WATCHLIST, exist_ok=True)
 FILE_MASTER_EXCEL = os.path.join(FOLDER_OUTPUT, 'Dragon_Screener_Master.xlsx')
 
 def sanitize_db_url(url):
-    """Mengamankan kata sandi yang mengandung karakter khusus seperti @ atau & agar tidak merusak host"""
+    """Mengamankan kata sandi yang mengandung karakter khusus serta membersihkan tanda petik/spasi liar"""
     if not url: return url
+    
+    # 🌟 PERBAIKAN: Hapus paksa spasi atau tanda petik liar jika tidak sengaja ter-paste di GitHub Secrets
+    url = url.strip().strip('"').strip("'")
+    
     prefix = "postgresql://"
     if url.startswith("postgres://"):
         url = url.replace("postgres://", prefix, 1)
@@ -45,7 +49,6 @@ def sanitize_db_url(url):
             creds, host_port = auth_part.rsplit('@', 1)
             if ':' in creds:
                 user, password = creds.split(':', 1)
-                # URL-encode password agar karakter khusus terbaca sempurna oleh driver SQL
                 encoded_pass = urllib.parse.quote_plus(password)
                 return f"{prefix}{user}:{encoded_pass}@{host_port}/{path_part}"
     return url
@@ -337,11 +340,16 @@ if RUN_AUTOMATED_WATCHLIST:
                 })
         if watchlist_results:
             df_watch_export = pd.DataFrame(watchlist_results).sort_values(by='CVI', ascending=False)
-            df_watch_export.to_sql('watchlist_live', db_engine, if_exists='replace', index=False)
-            print("🚀 WATCHLIST SUCCESS: Tabel 'watchlist_live' berhasil diupdate di Awan Cloud.")
-    print("💤 Seluruh proses cloud selesai. Sistem dimatikan secara bersih.")
-    sys.exit()
-
+            
+            # 🌟 PERBAIKAN BENTENG: Pastikan db_engine ada sebelum melakukan to_sql agar tidak memicu NameError
+            if IS_CLOUD and 'db_engine' in locals() or 'db_engine' in globals():
+                try:
+                    df_watch_export.to_sql('watchlist_live', db_engine, if_exists='replace', index=False)
+                    print("🚀 WATCHLIST SUCCESS: Tabel 'watchlist_live' berhasil diupdate di Awan Cloud.")
+                except Exception as e:
+                    print(f"❌ Gagal mengupload watchlist ke cloud database: {e}")
+            else:
+                print("⚠️ Cloud Engine tidak aktif/gagal inisialisasi. Data watchlist dilewati secara aman.")
 print("\n" + "="*90)
 print("💻 COMMAND CENTER INTERAKTIF LOCAL MODE")
 print("• Ketik 'WATCH'  : Evaluasi massal & ekspor otomatis")
