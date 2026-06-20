@@ -256,12 +256,20 @@ if not dragon_candidates.empty:
     print("="*210)
     print(df_excel_simple.to_string(index=False))
     
-    # 🌟 NEW: INJEKSI DATA KE DATABASE AWAN (TABEL RELEVAN STREAMLIT)
+    # 🌟 PERBAIKAN: INJEKSI DATA LIVE & HISTORI HARIAN KE DATABASE AWAN
     if IS_CLOUD:
         try:
+            # 1. Update data live untuk metrik hari ini
             df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
-            print("🚀 DATABASE SUCCESS: Data 'screener_live' berhasil diupdate di Awan Cloud.")
-        except Exception as e: print(f"❌ DATABASE ERROR: {e}")
+            
+            # 2. Tambah rekam jejak ke tabel histori (Akan bertambah terus ke bawah setiap hari)
+            df_histori = df_excel_simple.copy()
+            df_histori['Tanggal_Scan'] = datetime.now().strftime('%Y-%m-%d')
+            df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
+            
+            print("🚀 DATABASE SUCCESS: Data 'screener_live' & 'screener_history' berhasil diamankan di Cloud.")
+        except Exception as e: 
+            print(f"❌ DATABASE ERROR: {e}")
         
     # BACKUP LOKAL EXCEL TETAP TERJAGA
     sheet_name_hari_ini = datetime.now().strftime('%Y-%B-%d')
