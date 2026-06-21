@@ -36,14 +36,12 @@ def sanitize_db_url(url):
     """Mengamankan kata sandi yang mengandung karakter khusus serta membersihkan paksa tanda petik, spasi, atau teks variabel liar"""
     if not url: return url
     
-    # Jika tidak sengaja menyertakan teks 'DATABASE_URL = ' saat copy-paste di GitHub Secrets
     if "=" in url and not url.strip().startswith("postgres"):
         try:
             url = url.split("=", 1)[1]
         except:
             pass
             
-    # Bersihkan sisa-sisa spasi atau tanda petik pembungkus string
     url = url.strip().strip('"').strip("'")
     
     prefix = "postgresql://"
@@ -60,10 +58,8 @@ def sanitize_db_url(url):
                 return f"{prefix}{user}:{encoded_pass}@{host_port}/{path_part}"
     return url
 
-# AMBIL DATA DARI ENVIRONMENT SERVER CLOUD
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# FALLBACK PINTAR: Jika di laptop lokal kosong, otomatis pinjam dari .streamlit/secrets.toml
 if not DATABASE_URL or not DATABASE_URL.strip():
     path_secrets = os.path.join('.streamlit', 'secrets.toml')
     if os.path.exists(path_secrets):
@@ -76,7 +72,6 @@ if not DATABASE_URL or not DATABASE_URL.strip():
         except:
             pass
 
-# PROTEKSI KETAT: Memastikan string koneksi benar-benar valid dan tidak kosong
 DATABASE_URL = sanitize_db_url(DATABASE_URL)
 IS_CLOUD = bool(DATABASE_URL and DATABASE_URL.strip())
 
@@ -88,7 +83,7 @@ if IS_CLOUD:
         print(f"❌ Gagal Menginisialisasi Engine Database: {e}")
         IS_CLOUD = False
 else:
-    print("💻 Local Mode Aktif: Data hanya akan disimpan ke file Excel konvensional.")
+    print("💻 Local Mode Active.")
 
 # ==========================================
 # 2. ENGINE ANALISIS & ADVANCED ACTION
@@ -151,7 +146,7 @@ def generate_kesimpulan(row):
     elif row['Vol_Ratio'] < 0.6: kesimpulan.append("Volum Kering.")
     else: kesimpulan.append("Volum Normal.")
     
-    if row['CMF'] > 0.1: kes自由= True; kesimpulan.append("Akumulasi Kuat.")
+    if row['CMF'] > 0.1: kesimpulan.append("Akumulasi Kuat.")
     elif row['CMF'] > 0: kesimpulan.append("Akumulasi Siluman.")
     elif row['CMF'] < -0.1: kesimpulan.append("Distribusi Masal.")
     else: kesimpulan.append("Arus Distribusi Lemah.")
@@ -204,25 +199,46 @@ except:
         df_ticker = pd.read_csv(FILE_TICKER)
 
 df_ticker.columns = df_ticker.columns.str.strip()
-target_keywords = ['KODE', 'TICKER', 'KODE SAHAM', 'CODE', 'SYMBOL', 'SAHAM']
-matched_cols = [col for col in df_ticker.columns if str(col).upper() in target_keywords]
+
+# 🌟 PERBAIKAN 1: Pencarian nama kolom berbasis Substring agar kebal jika judulnya 'Kode Emiten', 'Ticker Symbol', dll.
+target_keywords = ['KODE', 'TICKER', 'EMITEN', 'CODE', 'SYMBOL', 'SAHAM']
+matched_cols = [col for col in df_ticker.columns if any(kw in str(col).upper() for kw in target_keywords)]
 target_col = matched_cols[0] if matched_cols else df_ticker.columns[0]
 
-DAFTAR_SAHAM = df_ticker[target_col].dropna().astype(str).str.strip().tolist()
-DAFTAR_SAHAM = [t for t in DAFTAR_SAHAM if len(t) == 4 and t.isalpha()]
-DAFTAR_SAHAM = list(set(DAFTAR_SAHAM))
-tickers_jk = [t + '.JK' for t in DAFTAR_SAHAM]
+print(f"📋 Menggunakan kolom '{target_col}' sebagai basis pencarian kode emiten bursa.")
 
-print("🌐 Mengunduh data historis bursa dari Yahoo Finance...")
-raw_data = yf.download(tickers_jk, period="2y", group_by='ticker', auto_adjust=True, progress=False)
+# Ekstraksi dan pembersihan seluruh populasi emiten bursa secara aman
+DAFTAR_SAHAM_RAW = df_ticker[target_col].dropna().astype(str).tolist()
+DAFTAR_SAHAM = []
+for t in DAFTAR_SAHAM_RAW:
+    clean_t = t.strip().upper().split('.')[0]
+    if len(clean_t) == 4 and clean_t.isalpha():
+        DAFTAR_SAHAM.append(clean_t)
+
+DAFTAR_SAHAM = sorted(list(set(DAFTAR_SAHAM)))
+tickers_jk = [t + '.JK' for t in DAFTAR_SAHAM]
+total_tickers = len(DAFTAR_SAHAM)
+print(f"🐉 Berhasil menemukan {total_tickers} emiten bursa unik dalam file CSV Anda.")
+
+# 🌟 PERBAIKAN 2: Mengunduh data bursa dalam format Batch per 100 Emiten (Anti-Rate-Limit & Kebal Meleset untuk BBCA/BNGA)
+print("🌐 Mengunduh data historis bursa secara aman dari Yahoo Finance...")
+batch_size = 100
+all_raw_dfs = []
+for i in range(0, len(tickers_jk), batch_size):
+    batch_tickers = tickers_jk[i:i+batch_size]
+    print(f"   ⏳ Mendownload Batch {i//batch_size + 1} ({len(batch_tickers)} emiten)...")
+    batch_data = yf.download(batch_tickers, period="2y", group_by='ticker', auto_adjust=True, progress=False)
+    all_raw_dfs.append(batch_data)
+
+# Gabungkan seluruh potongan batch menjadi satu dataframe bursa raksasa tunggal
+raw_data = pd.concat(all_raw_dfs, axis=1)
 
 print("\n🛠️  Mengekstrak dan menyusun kalkulasi 10 fitur advanced harian...")
 master_train, latest_data, dict_df_full = [], [], {}
-total_tickers = len(DAFTAR_SAHAM)
 
 for idx, ticker in enumerate(DAFTAR_SAHAM, 1):
     t_jk = ticker + '.JK'
-    if t_jk not in raw_data.columns.levels[0]: continue
+    if t_jk not in raw_data.columns.get_level_values(0): continue
     df_raw = raw_data[t_jk].dropna(subset=['Close'])
     df_t = build_features(df_raw, ticker)
     if df_t is None or df_t.empty: continue
@@ -257,7 +273,6 @@ X_latest = df_latest_global[features].fillna(0)
 df_latest_global['Expected_Days'] = model_days.predict(X_latest)
 df_latest_global['Expected_Upsize'] = model_upsize.predict(X_latest)
 
-# 🌟 MODIFIKASI INTI: Hitung metrik kuantitatif untuk SELURUH 587 saham bursa sebelum penyaringan dilakukan
 df_latest_global['CVI'] = (df_latest_global['Expected_Upsize'] / (df_latest_global['Expected_Days'].replace(0, 1e-5) * df_latest_global['BB_Width'].replace(0, 1e-5))).round(3)
 df_latest_global['Analisis_Kesimpulan'] = df_latest_global.apply(generate_kesimpulan, axis=1)
 df_latest_global['Rekomendasi_Action'] = df_latest_global.apply(rekomendasi_action_mendalam, axis=1)
@@ -273,10 +288,8 @@ df_latest_global['Vol_Velocity'] = df_latest_global['Vol_Velocity'].round(2)
 
 cols_final = ['Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity', 'CMF', 'UD_Vol_Ratio', 'Hari_Ke_Breakout', 'Potensial_Upsize', 'CVI', 'Analisis_Kesimpulan', 'Rekomendasi_Action']
 
-# Ekspor database master lengkap (seluruh emiten bursa hasil kalkulasi AI)
 df_all_export = df_latest_global[cols_final].copy()
 
-# Saring kandidat seleksi ketat untuk tabel utama Screener Live (Menghapus saham WAIT & SEE)
 dragon_candidates = df_latest_global[df_latest_global['Rekomendasi_Action'] != "WAIT & SEE (NANTI DULU)"].copy()
 df_excel_simple = dragon_candidates.sort_values(by='CVI', ascending=False)[cols_final].copy()
 
@@ -285,16 +298,11 @@ print("🐉 THE TIME-EFFICIENT SLEEPING DRAGON (PRODUCTION RUN)")
 print("="*210)
 print(df_excel_simple.to_string(index=False))
 
-# SUNTIKKAN DATA LIVE & HISTORI HARIAN KE DATABASE AWAN
 if IS_CLOUD:
     try:
-        # 1. Update data live untuk screener (hanya yang lolos buy/pantau)
         df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
-        
-        # 2. Update data master live untuk seluruh saham (587 emiten) agar bisa dicari di web per ticker
         df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
         
-        # 3. Tambah rekam jejak harian LENGKAP untuk seluruh saham bursa ke tabel histori (Mendukung pencarian saham non-screener di masa lalu)
         df_histori = df_all_export.copy()
         df_histori['Tanggal_Scan'] = datetime.now().strftime('%Y-%m-%d')
         df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
