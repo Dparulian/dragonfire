@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestRegressor  # DUAL-BRAIN ENGINE
 from datetime import datetime
 import warnings
 import mplfinance as mpf
-from sqlalchemy import create_engine  # 🌟 NEW: KONEKTOR DATABASE AWAN
+from sqlalchemy import create_engine  # KONEKTOR DATABASE AWAN
 import urllib.parse
 
 warnings.filterwarnings('ignore')
@@ -33,10 +33,17 @@ os.makedirs(FOLDER_WATCHLIST, exist_ok=True)
 FILE_MASTER_EXCEL = os.path.join(FOLDER_OUTPUT, 'Dragon_Screener_Master.xlsx')
 
 def sanitize_db_url(url):
-    """Mengamankan kata sandi yang mengandung karakter khusus serta membersihkan tanda petik/spasi liar"""
+    """Mengamankan kata sandi yang mengandung karakter khusus serta membersihkan paksa tanda petik, spasi, atau teks variabel liar"""
     if not url: return url
     
-    # 🌟 PERBAIKAN: Hapus paksa spasi atau tanda petik liar jika tidak sengaja ter-paste di GitHub Secrets
+    # Jika tidak sengaja menyertakan teks 'DATABASE_URL = ' saat copy-paste di GitHub Secrets
+    if "=" in url and not url.strip().startswith("postgres"):
+        try:
+            url = url.split("=", 1)[1]
+        except:
+            pass
+            
+    # Bersihkan sisa-sisa spasi atau tanda petik pembungkus string
     url = url.strip().strip('"').strip("'")
     
     prefix = "postgresql://"
@@ -53,10 +60,10 @@ def sanitize_db_url(url):
                 return f"{prefix}{user}:{encoded_pass}@{host_port}/{path_part}"
     return url
 
-# 🌟 AMBIL DATA DARI ENVIRONMENT SERVER CLOUD
+# AMBIL DATA DARI ENVIRONMENT SERVER CLOUD
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# 🌟 FALLBACK PINTAR: Jika di laptop lokal kosong, otomatis pinjam dari .streamlit/secrets.toml
+# FALLBACK PINTAR: Jika di laptop lokal kosong, otomatis pinjam dari .streamlit/secrets.toml
 if not DATABASE_URL or not DATABASE_URL.strip():
     path_secrets = os.path.join('.streamlit', 'secrets.toml')
     if os.path.exists(path_secrets):
@@ -69,7 +76,7 @@ if not DATABASE_URL or not DATABASE_URL.strip():
         except:
             pass
 
-# 🌟 PROTEKSI KETAT: Memastikan string koneksi benar-benar valid dan tidak kosong
+# PROTEKSI KETAT: Memastikan string koneksi benar-benar valid dan tidak kosong
 DATABASE_URL = sanitize_db_url(DATABASE_URL)
 IS_CLOUD = bool(DATABASE_URL and DATABASE_URL.strip())
 
@@ -144,7 +151,7 @@ def generate_kesimpulan(row):
     elif row['Vol_Ratio'] < 0.6: kesimpulan.append("Volum Kering.")
     else: kesimpulan.append("Volum Normal.")
     
-    if row['CMF'] > 0.1: kesimpulan.append("Akumulasi Kuat.")
+    if row['CMF'] > 0.1: kes自由= True; kesimpulan.append("Akumulasi Kuat.")
     elif row['CMF'] > 0: kesimpulan.append("Akumulasi Siluman.")
     elif row['CMF'] < -0.1: kesimpulan.append("Distribusi Masal.")
     else: kesimpulan.append("Arus Distribusi Lemah.")
@@ -250,56 +257,60 @@ X_latest = df_latest_global[features].fillna(0)
 df_latest_global['Expected_Days'] = model_days.predict(X_latest)
 df_latest_global['Expected_Upsize'] = model_upsize.predict(X_latest)
 
-dragon_candidates = df_latest_global[
-    (df_latest_global['BB_Width'] <= BB_WIDTH_MAX) & 
-    (df_latest_global['CMF'] > MIN_CMF) & 
-    (df_latest_global['UD_Vol_Ratio'] >= MIN_UD_RATIO)
-].copy()
+# 🌟 MODIFIKASI INTI: Hitung metrik kuantitatif untuk SELURUH 587 saham bursa sebelum penyaringan dilakukan
+df_latest_global['CVI'] = (df_latest_global['Expected_Upsize'] / (df_latest_global['Expected_Days'].replace(0, 1e-5) * df_latest_global['BB_Width'].replace(0, 1e-5))).round(3)
+df_latest_global['Analisis_Kesimpulan'] = df_latest_global.apply(generate_kesimpulan, axis=1)
+df_latest_global['Rekomendasi_Action'] = df_latest_global.apply(rekomendasi_action_mendalam, axis=1)
 
-dragon_candidates['CVI'] = (dragon_candidates['Expected_Upsize'] / (dragon_candidates['Expected_Days'].replace(0, 1e-5) * dragon_candidates['BB_Width'].replace(0, 1e-5))).round(3)
+df_latest_global['Support'] = df_latest_global['Support'].round(0).astype(int)
+df_latest_global['Resistance'] = df_latest_global['Resistance'].round(0).astype(int)
+df_latest_global['Hari_Ke_Breakout'] = df_latest_global['Expected_Days'].round(1).astype(str) + ' Hari'
+df_latest_global['Potensial_Upsize'] = '+' + (df_latest_global['Expected_Upsize'] * 100).round(2).astype(str) + '%'
+df_latest_global['BB_Width_Str'] = (df_latest_global['BB_Width'] * 100).round(2).astype(str) + '%'
+df_latest_global['CMF'] = df_latest_global['CMF'].round(3)
+df_latest_global['UD_Vol_Ratio'] = df_latest_global['UD_Vol_Ratio'].round(2)
+df_latest_global['Vol_Velocity'] = df_latest_global['Vol_Velocity'].round(2)
+
 cols_final = ['Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity', 'CMF', 'UD_Vol_Ratio', 'Hari_Ke_Breakout', 'Potensial_Upsize', 'CVI', 'Analisis_Kesimpulan', 'Rekomendasi_Action']
 
-if not dragon_candidates.empty:
-    dragon_candidates['Analisis_Kesimpulan'] = dragon_candidates.apply(generate_kesimpulan, axis=1)
-    dragon_candidates['Rekomendasi_Action'] = dragon_candidates.apply(rekomendasi_action_mendalam, axis=1)
-    
-    dragon_candidates['Support'] = dragon_candidates['Support'].round(0).astype(int)
-    dragon_candidates['Resistance'] = dragon_candidates['Resistance'].round(0).astype(int)
-    dragon_candidates['Hari_Ke_Breakout'] = dragon_candidates['Expected_Days'].round(1).astype(str) + ' Hari'
-    dragon_candidates['Potensial_Upsize'] = '+' + (dragon_candidates['Expected_Upsize'] * 100).round(2).astype(str) + '%'
-    dragon_candidates['BB_Width_Str'] = (dragon_candidates['BB_Width'] * 100).round(2).astype(str) + '%'
-    dragon_candidates['CMF'] = dragon_candidates['CMF'].round(3)
-    dragon_candidates['UD_Vol_Ratio'] = dragon_candidates['UD_Vol_Ratio'].round(2)
-    dragon_candidates['Vol_Velocity'] = dragon_candidates['Vol_Velocity'].round(2)
-    
-    df_excel_simple = dragon_candidates.sort_values(by='CVI', ascending=False)[cols_final].copy()
-    
-    print("\n" + "="*210)
-    print("🐉 THE TIME-EFFICIENT SLEEPING DRAGON (PRODUCTION RUN)")
-    print("="*210)
-    print(df_excel_simple.to_string(index=False))
-    
-    # 🌟 PERBAIKAN: INJEKSI DATA LIVE & HISTORI HARIAN KE DATABASE AWAN
-    if IS_CLOUD:
-        try:
-            df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
-            
-            df_histori = df_excel_simple.copy()
-            df_histori['Tanggal_Scan'] = datetime.now().strftime('%Y-%m-%d')
-            df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
-            
-            print("🚀 DATABASE SUCCESS: Data 'screener_live' & 'screener_history' berhasil diamankan di Cloud.")
-        except Exception as e: 
-            print(f"❌ DATABASE ERROR: {e}")
-        
-    sheet_name_hari_ini = datetime.now().strftime('%Y-%B-%d')
+# Ekspor database master lengkap (seluruh emiten bursa hasil kalkulasi AI)
+df_all_export = df_latest_global[cols_final].copy()
+
+# Saring kandidat seleksi ketat untuk tabel utama Screener Live (Menghapus saham WAIT & SEE)
+dragon_candidates = df_latest_global[df_latest_global['Rekomendasi_Action'] != "WAIT & SEE (NANTI DULU)"].copy()
+df_excel_simple = dragon_candidates.sort_values(by='CVI', ascending=False)[cols_final].copy()
+
+print("\n" + "="*210)
+print("🐉 THE TIME-EFFICIENT SLEEPING DRAGON (PRODUCTION RUN)")
+print("="*210)
+print(df_excel_simple.to_string(index=False))
+
+# SUNTIKKAN DATA LIVE & HISTORI HARIAN KE DATABASE AWAN
+if IS_CLOUD:
     try:
-        with pd.ExcelWriter(FILE_MASTER_EXCEL, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-            df_excel_simple.to_excel(writer, sheet_name=sheet_name_hari_ini, index=False)
-    except: pass
+        # 1. Update data live untuk screener (hanya yang lolos buy/pantau)
+        df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
+        
+        # 2. Update data master live untuk seluruh saham (587 emiten) agar bisa dicari di web per ticker
+        df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
+        
+        # 3. Tambah rekam jejak harian LENGKAP untuk seluruh saham bursa ke tabel histori (Mendukung pencarian saham non-screener di masa lalu)
+        df_histori = df_all_export.copy()
+        df_histori['Tanggal_Scan'] = datetime.now().strftime('%Y-%m-%d')
+        df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
+        
+        print("🚀 DATABASE SUCCESS: Data 'screener_live', 'all_stocks_live', & 'screener_history' berhasil diamankan di Cloud.")
+    except Exception as e: 
+        print(f"❌ DATABASE ERROR: {e}")
     
-    for idx, row in dragon_candidates.iterrows():
-        if "BUY" in str(row['Rekomendasi_Action']): simpan_grafik(dict_df_full[row['Ticker']], row['Ticker'], "Screener_Lolos")
+sheet_name_hari_ini = datetime.now().strftime('%Y-%B-%d')
+try:
+    with pd.ExcelWriter(FILE_MASTER_EXCEL, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+        df_excel_simple.to_excel(writer, sheet_name=sheet_name_hari_ini, index=False)
+except: pass
+
+for idx, row in dragon_candidates.iterrows():
+    if "BUY" in str(row['Rekomendasi_Action']): simpan_grafik(dict_df_full[row['Ticker']], row['Ticker'], "Screener_Lolos")
 
 # ==========================================
 # 4. MONITOR COMMAND CENTER INTERAKTIF / AUTOMATION BYPASS
@@ -340,8 +351,7 @@ if RUN_AUTOMATED_WATCHLIST:
                 })
         if watchlist_results:
             df_watch_export = pd.DataFrame(watchlist_results).sort_values(by='CVI', ascending=False)
-            
-            if IS_CLOUD and 'db_engine' in locals() or 'db_engine' in globals():
+            if IS_CLOUD and ('db_engine' in locals() or 'db_engine' in globals()):
                 try:
                     df_watch_export.to_sql('watchlist_live', db_engine, if_exists='replace', index=False)
                     print("🚀 WATCHLIST SUCCESS: Tabel 'watchlist_live' berhasil diupdate di Awan Cloud.")
@@ -349,12 +359,9 @@ if RUN_AUTOMATED_WATCHLIST:
                     print(f"❌ Gagal mengupload watchlist ke cloud database: {e}")
             else:
                 print("⚠️ Cloud Engine tidak aktif/gagal inisialisasi. Data watchlist dilewati secara aman.")
-                
-    # 🌟 KUNCI SOLUSI: Tambahkan 2 baris ini (Pastikan sejajar 4 spasi ke dalam)
     print("💤 Seluruh proses cloud selesai. Sistem otomatisasi dimatikan secara bersih.")
-    sys.exit() # <-- Memaksa server GitHub berhenti di sini dan melaporkan status "Success" ✅
+    sys.exit()
 
-# Baris di bawah ini sekarang aman, hanya akan dieksekusi jika kamu running manual di laptop
 print("\n" + "="*90)
 print("💻 COMMAND CENTER INTERAKTIF LOCAL MODE")
 print("• Ketik 'WATCH'  : Evaluasi massal & ekspor otomatis")
