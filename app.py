@@ -46,9 +46,9 @@ html, body, [data-testid="stAppViewContainer"] {
 }
 .block-container { padding-top: 1.2rem; padding-bottom: 2rem; }
 
-/* ---- 🌟 PERBAIKAN KONTRAS FONT OTOMATIS (ANTI INVISIBLE TEXT) ---- */
-/* Default untuk container gelap: Font wajib putih/terang */
-.metric-card, .pick-card, .diag-item, .sidebar-stat, div, p, span, label {
+/* ---- PERBAIKAN KONTRAS FONT & LATAR BELAKANG (ANTI INVISIBLE TEXT) ---- */
+/* Memastikan jika kontainer/widget berlatar gelap, font wajib putih/terang */
+div, p, span, label, h1, h2, h3, h4, h5, h6 {
     color: inherit;
 }
 
@@ -60,20 +60,13 @@ html, body, [data-testid="stAppViewContainer"] {
     border-radius: 6px !important;
 }
 
-/* KONDISI BALIKAN: Jika komponen dipaksa berlatar belakang putih/terang oleh sistem browser, font dipaksa hitam pekat */
-[style*="background-color: white"], [style*="background: white"], .white-bg, .stDataFrame div {
+/* Jika komponen terpaksa berlatar belakang putih/terang oleh sistem browser, font dipaksa hitam */
+[style*="background-color: white"], [style*="background: white"], .white-bg {
+    background-color: #ffffff !important;
     color: #000000 !important;
 }
 
-/* PROTEKSI: Menjaga warna khusus untuk judul Tab Aktif dan Header Utama agar tidak tertimpa rule hitam-putih */
-.stTabs [aria-selected="true"] {
-    color: var(--accent-fire) !important;
-}
-.dragon-header h1 {
-    color: var(--accent-fire) !important;
-}
-
-/* ---- HEADER SPANDUK ---- */
+/* ---- HEADER ---- */
 .dragon-header {
     background: linear-gradient(135deg, #1a0a00 0%, #0d1117 60%, #0a1628 100%);
     border: 1px solid var(--border);
@@ -83,13 +76,14 @@ html, body, [data-testid="stAppViewContainer"] {
     margin-bottom: 20px;
 }
 .dragon-header h1 {
+    color: var(--accent-fire);
     font-size: 28px;
     font-weight: 800;
     letter-spacing: -0.5px;
     margin: 0;
 }
 .dragon-header p {
-    color: var(--text-muted) !important;
+    color: var(--text-muted);
     font-size: 13px;
     margin: 4px 0 0 0;
 }
@@ -103,12 +97,12 @@ html, body, [data-testid="stAppViewContainer"] {
     padding: 14px 18px;
     flex: 1; min-width: 140px;
 }
-.metric-card .label { color: var(--text-muted) !important; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
-.metric-card .value { color: var(--text-primary) !important; font-size: 22px; font-weight: 700; margin-top: 4px; }
+.metric-card .label { color: var(--text-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; }
+.metric-card .value { color: var(--text-primary); font-size: 22px; font-weight: 700; margin-top: 4px; }
 .metric-card .delta { font-size: 12px; margin-top: 2px; }
-.delta-up   { color: var(--accent-green) !important; }
-.delta-down { color: var(--accent-red) !important; }
-.delta-neu  { color: var(--text-muted) !important; }
+.delta-up   { color: var(--accent-green); }
+.delta-down { color: var(--accent-red); }
+.delta-neu  { color: var(--text-muted); }
 
 /* ---- TOP PICK CARDS ---- */
 .pick-card {
@@ -128,10 +122,10 @@ html, body, [data-testid="stAppViewContainer"] {
 .pick-card.gold::before   { background: linear-gradient(90deg, #e3b341, #f0c060); }
 .pick-card.silver::before { background: linear-gradient(90deg, #8b949e, #b0b8c1); }
 .pick-card.bronze::before { background: linear-gradient(90deg, #c46f3c, #e08050); }
-.pick-rank { color: var(--text-muted) !important; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-.pick-ticker { color: var(--text-primary) !important; font-size: 26px; font-weight: 800; margin: 2px 0; }
-.pick-price { color: var(--accent-blue) !important; font-size: 18px; font-weight: 600; }
-.pick-cvi { color: var(--text-muted) !important; font-size: 12px; margin-top: 6px; }
+.pick-rank { color: var(--text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+.pick-ticker { color: var(--text-primary); font-size: 26px; font-weight: 800; margin: 2px 0; }
+.pick-price { color: var(--accent-blue); font-size: 18px; font-weight: 600; }
+.pick-cvi { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
 
 /* ---- ACTION BADGES ---- */
 .badge {
@@ -143,11 +137,11 @@ html, body, [data-testid="stAppViewContainer"] {
     letter-spacing: 0.5px;
     margin-top: 8px;
 }
-.badge-buy-now   { background: rgba(63,185,80,.15); color: var(--accent-green) !important; border: 1px solid rgba(63,185,80,.4); }
-.badge-scalping  { background: rgba(255,107,53,.15); color: var(--accent-fire) !important;  border: 1px solid rgba(255,107,53,.4); }
-.badge-watch     { background: rgba(227,179,65,.15); color: var(--accent-amber) !important; border: 1px solid rgba(227,179,65,.4); }
-.badge-hold      { background: rgba(88,166,255,.15); color: var(--accent-blue) !important;  border: 1px solid rgba(88,166,255,.4); }
-.badge-avoid     { background: rgba(248,81,73,.15);  color: var(--accent-red) !important;   border: 1px solid rgba(248,81,73,.4); }
+.badge-buy-now   { background: rgba(63,185,80,.15); color: var(--accent-green); border: 1px solid rgba(63,185,80,.4); }
+.badge-scalping  { background: rgba(255,107,53,.15); color: var(--accent-fire);  border: 1px solid rgba(255,107,53,.4); }
+.badge-watch     { background: rgba(227,179,65,.15); color: var(--accent-amber); border: 1px solid rgba(227,179,65,.4); }
+.badge-hold      { background: rgba(88,166,255,.15); color: var(--accent-blue);  border: 1px solid rgba(88,166,255,.4); }
+.badge-avoid     { background: rgba(248,81,73,.15);  color: var(--accent-red);   border: 1px solid rgba(248,81,73,.4); }
 
 /* ---- TABLE OVERRIDE ---- */
 [data-testid="stDataFrame"] {
@@ -171,8 +165,62 @@ html, body, [data-testid="stAppViewContainer"] {
     padding: 12px 18px;
     border-bottom: 2px solid transparent !important;
 }
+.stTabs [aria-selected="true"] {
+    color: var(--accent-fire) !important;
+    border-bottom: 2px solid var(--accent-fire) !important;
+    background: transparent !important;
+}
 
 .stMultiSelect [data-baseweb="tag"] { background: var(--accent-fire) !important; }
+
+/* ---- SECTION LABELS ---- */
+.section-label {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+/* ---- ALERT BOX ---- */
+.info-box {
+    background: rgba(88,166,255,.08);
+    border: 1px solid rgba(88,166,255,.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--accent-blue);
+    font-size: 13px;
+    margin: 8px 0;
+}
+.warn-box {
+    background: rgba(227,179,65,.08);
+    border: 1px solid rgba(227,179,65,.3);
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: var(--accent-amber);
+    font-size: 13px;
+    margin: 8px 0;
+}
+
+/* ---- DIAGNOSTIK DETAIL ---- */
+.diag-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+    margin: 14px 0;
+}
+.diag-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+.diag-item .key   { color: var(--text-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.diag-item .val   { color: var(--text-primary); font-size: 18px; font-weight: 700; margin-top: 2px; }
+.diag-item .hint  { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
 
 /* ---- HIDE STREAMLIT CHROME ---- */
 #MainMenu, footer, header { visibility: hidden; }
@@ -243,6 +291,7 @@ def fetch_chart_data(ticker):
     except Exception:
         return pd.DataFrame()
 
+# Fungsi standardisasi kolom kuantitatif yang 100% aman melacak ticker bursa
 def normalize_columns(df):
     if df is None or df.empty: return pd.DataFrame()
     df.columns = df.columns.str.lower()
@@ -362,7 +411,7 @@ def render_chart(ticker, row_data=None):
         st.warning(f"Chart tidak dapat dimuat: {ex}")
 
 # ==========================================
-# 5. HEADER & TOP BANNER METRICS (🌟 LAYOUT UTAMA UTK HP & PC)
+# 5. HEADER & TOP BANNER METRICS (🌟 FIXED SIDEBAR FREE GRID)
 # ==========================================
 now_str = datetime.now().strftime('%d %b %Y, %H:%M WIB')
 
@@ -425,7 +474,7 @@ with col_m4:
 # 🔄 TOMBOL REFRESH DI HALAMAN UTAMA (ANTI CACHE LOCK SERVER)
 with col_m5:
     st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
-    if st.button("🔄 Refresh Data", use_container_width=True, key="main_refresh_action_v4"):
+    if st.button("🔄 Refresh Data", use_container_width=True, key="main_refresh_action_v5"):
         st.cache_data.clear()
         st.rerun()
 
@@ -564,7 +613,7 @@ with tab3:
         search_btn = st.button("🔍 Analisis", use_container_width=True)
 
     if search_ticker:
-        # Mencari langsung dari master database bursa lengkap (587 emiten)
+        # Mencari langsung dari master database bursa lengkap (587 emiten) kebal dari status kriteria screening harian
         match = df_all_stocks[df_all_stocks['Ticker'] == search_ticker] if not df_all_stocks.empty else pd.DataFrame()
         source_label = "Database Utama BEI (Master Scan)"
         
@@ -702,5 +751,3 @@ with tab4:
                 "CVI":   st.column_config.NumberColumn("CVI",   format="%.3f")
             }
         )
-"""
-print("DONE VIEWING")}
