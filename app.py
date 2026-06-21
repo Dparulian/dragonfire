@@ -257,15 +257,6 @@ except Exception as e:
 # ==========================================
 # 3. DATA LOADER
 # ==========================================
-peta_kolom = {
-    'ticker': 'Ticker', 'close': 'Close', 'support': 'Support', 'resistance': 'Resistance',
-    'bb_width_str': 'BB_Width_Str', 'vol_ratio': 'Vol_Ratio', 'vol_velocity': 'Vol_Velocity',
-    'cmf': 'CMF', 'ud_vol_ratio': 'UD_Vol_Ratio', 'hari_ke_breakout': 'Hari_Ke_Breakout',
-    'potensial_upsize': 'Potensial_Upsize', 'cvi': 'CVI',
-    'analisis_kesimpulan': 'Analisis_Kesimpulan', 'rekomendasi_action': 'Rekomendasi_Action',
-    'tanggal_scan': 'Tanggal_Scan'
-}
-
 @st.cache_data(ttl=600)
 def fetch_cloud_data(table_name):
     try:
@@ -289,11 +280,24 @@ def fetch_chart_data(ticker):
     except Exception:
         return pd.DataFrame()
 
-df_screener = fetch_cloud_data('screener_live').rename(columns=peta_kolom)
-df_watchlist = fetch_cloud_data('watchlist_live').rename(columns=peta_kolom)
-df_history   = fetch_cloud_data('screener_history').rename(columns=peta_kolom)
-# 🌟 TAMBAHAN MASTER: Ambil data seluruh 587 emiten bursa dari awan
-df_all_stocks = fetch_cloud_data('all_stocks_live').rename(columns=peta_kolom)
+# 🌟 KUNCI PERBAIKAN: Fungsi standardisasi kolom untuk menjamin kecocokan data 100%
+def normalize_columns(df):
+    if df is None or df.empty: return pd.DataFrame()
+    # 1. Paksa semua nama kolom menjadi huruf kecil terlebih dahulu untuk netralisasi casing database
+    df.columns = df.columns.str.lower()
+    # 2. Petakan ke nama kolom CamelCase asli yang digunakan oleh komponen visual dasbor
+    mapping = {c.lower(): c for c in ['Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity', 'CMF', 'UD_Vol_Ratio', 'Hari_Ke_Breakout', 'Potensial_Upsize', 'CVI', 'Analisis_Kesimpulan', 'Rekomendasi_Action', 'Tanggal_Scan']}
+    df = df.rename(columns=mapping)
+    # 3. Bersihkan spasi liar dan paksa kode ticker menjadi Huruf Besar Kapital (Mencegah eror pencarian)
+    if 'Ticker' in df.columns:
+        df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
+    return df
+
+# Muat seluruh tabel dari Supabase dan jalankan fungsi proteksi pembersihan data
+df_screener = normalize_columns(fetch_cloud_data('screener_live'))
+df_watchlist = normalize_columns(fetch_cloud_data('watchlist_live'))
+df_history   = normalize_columns(fetch_cloud_data('screener_history'))
+df_all_stocks = normalize_columns(fetch_cloud_data('all_stocks_live'))
 
 # ==========================================
 # 4. HELPER FUNCTIONS
