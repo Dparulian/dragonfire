@@ -83,7 +83,7 @@ if IS_CLOUD:
         print(f"❌ Gagal Menginisialisasi Engine Database: {e}")
         IS_CLOUD = False
 else:
-    print("💻 Local Mode Active.")
+    print("💻 Local Mode Aktif: Data hanya akan disimpan ke file Excel konvensional.")
 
 # ==========================================
 # 2. ENGINE ANALISIS & ADVANCED ACTION
@@ -198,9 +198,9 @@ except:
     except:
         df_ticker = pd.read_csv(FILE_TICKER)
 
-df_ticker.columns = df_ticker.columns.str.strip()
+# 🌟 PERBAIKAN 1: Bersihkan nama kolom dari spasi dan karakter tak terlihat (BOM Excel)
+df_ticker.columns = df_ticker.columns.str.strip().str.replace('﻿', '', regex=False)
 
-# 🌟 PERBAIKAN 1: Pencarian nama kolom berbasis Substring agar kebal jika judulnya 'Kode Emiten', 'Ticker Symbol', dll.
 target_keywords = ['KODE', 'TICKER', 'EMITEN', 'CODE', 'SYMBOL', 'SAHAM']
 matched_cols = [col for col in df_ticker.columns if any(kw in str(col).upper() for kw in target_keywords)]
 target_col = matched_cols[0] if matched_cols else df_ticker.columns[0]
@@ -218,9 +218,11 @@ for t in DAFTAR_SAHAM_RAW:
 DAFTAR_SAHAM = sorted(list(set(DAFTAR_SAHAM)))
 tickers_jk = [t + '.JK' for t in DAFTAR_SAHAM]
 total_tickers = len(DAFTAR_SAHAM)
-print(f"🐉 Berhasil menemukan {total_tickers} emiten bursa unik dalam file CSV Anda.")
 
-# 🌟 PERBAIKAN 2: Mengunduh data bursa dalam format Batch per 100 Emiten (Anti-Rate-Limit & Kebal Meleset untuk BBCA/BNGA)
+print(f"🐉 Berhasil menemukan {total_tickers} emiten bursa unik dalam file CSV Anda.")
+print(f"📋 Sampel 10 emiten pertama yang dibaca: {DAFTAR_SAHAM[:10]}")
+
+# 🌟 PERBAIKAN 2: Mengunduh data bursa dalam format Batch per 100 Emiten (Anti-Rate-Limit Yahoo Finance)
 print("🌐 Mengunduh data historis bursa secara aman dari Yahoo Finance...")
 batch_size = 100
 all_raw_dfs = []
@@ -375,7 +377,7 @@ print("💻 COMMAND CENTER INTERAKTIF LOCAL MODE")
 print("• Ketik 'WATCH'  : Evaluasi massal & ekspor otomatis")
 print("• Ketik 'TICKER' : Evaluasi manual satu per satu")
 print("• Ketik 'EXIT'   : Keluar dari program")
-print("="*90)
+print("="0)
 
 while True:
     try:
