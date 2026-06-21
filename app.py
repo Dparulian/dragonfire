@@ -37,8 +37,28 @@ st.markdown("""
 /* ---- BODY / BASE ---- */
 html, body, [data-testid="stAppViewContainer"] {
     background-color: var(--bg-base) !important;
-    color: var(--text-primary);
+    color: var(--text-primary) !important;
     font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* ---- PERBAIKAN KONTRAS FONT & LATAR BELAKANG (ANTI INVISIBLE TEXT) ---- */
+/* Memastikan jika kontainer/widget berlatar gelap, font wajib putih/terang */
+div, p, span, label, h1, h2, h3, h4, h5, h6 {
+    color: inherit;
+}
+
+/* Memaksa elemen input bawaan Streamlit mengikuti tema gelap agar font putih terlihat kontras */
+.stTextInput input, .stSelectbox select, .stMultiSelect div, textarea {
+    background-color: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px !important;
+}
+
+/* Jika komponen terpaksa berlatar belakang putih/terang oleh sistem browser, font dipaksa hitam */
+[style*="background-color: white"], [style*="background: white"], .white-bg {
+    background-color: #ffffff !important;
+    color: #000000 !important;
 }
 [data-testid="stSidebar"] {
     background-color: var(--bg-card) !important;
@@ -105,7 +125,7 @@ html, body, [data-testid="stAppViewContainer"] {
 .pick-rank { color: var(--text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
 .pick-ticker { color: var(--text-primary); font-size: 26px; font-weight: 800; margin: 2px 0; }
 .pick-price { color: var(--accent-blue); font-size: 18px; font-weight: 600; }
-.pick-cvi { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+.pick-order { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
 
 /* ---- ACTION BADGES ---- */
 .badge {
@@ -151,13 +171,6 @@ html, body, [data-testid="stAppViewContainer"] {
     background: transparent !important;
 }
 
-/* ---- INPUTS ---- */
-.stTextInput input, .stSelectbox select {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    color: var(--text-primary) !important;
-    border-radius: 6px !important;
-}
 .stMultiSelect [data-baseweb="tag"] { background: var(--accent-fire) !important; }
 
 /* ---- SECTION LABELS ---- */
@@ -257,6 +270,15 @@ except Exception as e:
 # ==========================================
 # 3. DATA LOADER
 # ==========================================
+peta_kolom = {
+    'ticker': 'Ticker', 'close': 'Close', 'support': 'Support', 'resistance': 'Resistance',
+    'bb_width_str': 'BB_Width_Str', 'vol_ratio': 'Vol_Ratio', 'vol_velocity': 'Vol_Velocity',
+    'cmf': 'CMF', 'ud_vol_ratio': 'UD_Vol_Ratio', 'hari_ke_breakout': 'Hari_Ke_Breakout',
+    'potensial_upsize': 'Potensial_Upsize', 'cvi': 'CVI',
+    'analisis_kesimpulan': 'Analisis_Kesimpulan', 'rekomendasi_action': 'Rekomendasi_Action',
+    'tanggal_scan': 'Tanggal_Scan'
+}
+
 @st.cache_data(ttl=600)
 def fetch_cloud_data(table_name):
     try:
@@ -280,20 +302,17 @@ def fetch_chart_data(ticker):
     except Exception:
         return pd.DataFrame()
 
-# 🌟 KUNCI PERBAIKAN: Fungsi standardisasi kolom untuk menjamin kecocokan data 100%
+# Fungsi standardisasi kolom kuantitatif yang 100% aman melacak ticker bursa
+# Fungsi standardisasi kolom kuantitatif yang 100% aman melacak ticker bursa
 def normalize_columns(df):
     if df is None or df.empty: return pd.DataFrame()
-    # 1. Paksa semua nama kolom menjadi huruf kecil terlebih dahulu untuk netralisasi casing database
     df.columns = df.columns.str.lower()
-    # 2. Petakan ke nama kolom CamelCase asli yang digunakan oleh komponen visual dasbor
     mapping = {c.lower(): c for c in ['Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity', 'CMF', 'UD_Vol_Ratio', 'Hari_Ke_Breakout', 'Potensial_Upsize', 'CVI', 'Analisis_Kesimpulan', 'Rekomendasi_Action', 'Tanggal_Scan']}
     df = df.rename(columns=mapping)
-    # 3. Bersihkan spasi liar dan paksa kode ticker menjadi Huruf Besar Kapital (Mencegah eror pencarian)
     if 'Ticker' in df.columns:
         df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
     return df
 
-# Muat seluruh tabel dari Supabase dan jalankan fungsi proteksi pembersihan data
 df_screener = normalize_columns(fetch_cloud_data('screener_live'))
 df_watchlist = normalize_columns(fetch_cloud_data('watchlist_live'))
 df_history   = normalize_columns(fetch_cloud_data('screener_history'))
@@ -400,13 +419,11 @@ def render_chart(ticker, row_data=None):
         fig.update_yaxes(showspikes=True, spikecolor="#30363d", spikethickness=1)
 
         st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-    except ImportError:
-        st.info("Tambahkan `plotly` ke requirements.txt untuk menampilkan chart.")
     except Exception as ex:
         st.warning(f"Chart tidak dapat dimuat: {ex}")
 
 # ==========================================
-# 5. HEADER & SIDEBAR
+# 5. HEADER & TOP BANNER METRICS (🌟 MOBILE RESPONSIVE UI)
 # ==========================================
 now_str = datetime.now().strftime('%d %b %Y, %H:%M WIB')
 
@@ -417,41 +434,64 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-with st.sidebar:
-    st.markdown("### 🐉 Dragon Fire")
-    st.markdown('<div class="section-label">STATUS DATABASE</div>', unsafe_allow_html=True)
+# Hitung variabel statistik data bursa Anda
+n_screener  = len(df_screener)
+n_watchlist = len(df_watchlist)
+n_buy       = len(df_screener[df_screener['Rekomendasi_Action'].str.contains("BUY", na=False)]) if n_screener else 0
 
-    n_screener  = len(df_screener)
-    n_watchlist = len(df_watchlist)
-    n_buy       = len(df_screener[df_screener['Rekomendasi_Action'].str.contains("BUY", na=False)]) if n_screener else 0
+# Grid Komponen Atas: Membawa status database ke halaman utama agar 100% tampil di HP/Komputer
+col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns([1.5, 1.5, 1.5, 2, 1.5])
 
+with col_m1:
     st.markdown(f"""
-    <div class="sidebar-stat"><div class="s-label">Emiten Screener Live</div><div class="s-val">{n_screener}</div></div>
-    <div class="sidebar-stat"><div class="s-label">Sinyal BUY Aktif</div><div class="s-val" style="color:#3fb950">{n_buy}</div></div>
-    <div class="sidebar-stat"><div class="s-label">Watchlist Aktif</div><div class="s-val" style="color:#58a6ff">{n_watchlist}</div></div>
+    <div class="metric-card">
+        <div class="label">Screener Live</div>
+        <div class="value">{n_screener}</div>
+    </div>
     """, unsafe_allow_html=True)
 
+with col_m2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label" style="color:#3fb950">Sinyal BUY Aktif</div>
+        <div class="value" style="color:#3fb950">{n_buy}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_m3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="label" style="color:#58a6ff">Watchlist Aktif</div>
+        <div class="value" style="color:#58a6ff">{n_watchlist}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_m4:
     if n_screener > 0 and 'CVI' in df_screener.columns:
         top_cvi = df_screener.sort_values('CVI', ascending=False).iloc[0]
-        st.markdown('<div class="section-label" style="margin-top:14px">TOP CVI HARI INI</div>', unsafe_allow_html=True)
         st.markdown(f"""
-        <div class="sidebar-stat">
-            <div class="s-label">#{1} Ticker</div>
-            <div class="s-val" style="color:#ff6b35">{top_cvi.get('Ticker','—')}</div>
-            <div class="s-label" style="margin-top:4px">CVI {top_cvi.get('CVI','—')} · {top_cvi.get('Potensial_Upsize','—')}</div>
+        <div class="metric-card">
+            <div class="label" style="color:#ff6b35">🥇 TOP CVI HARI INI</div>
+            <div class="value" style="color:#ff6b35; font-size:18px;">{top_cvi.get('Ticker','—')} ({top_cvi.get('CVI','—')})</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class="metric-card">
+            <div class="label">Top CVI</div>
+            <div class="value">—</div>
         </div>
         """, unsafe_allow_html=True)
 
-    st.write("")
-    if st.button("🔄 Refresh Data", use_container_width=True):
+# 🔄 SUNTIKKAN TOMBOL MANUAL CACHE REFRESH DI MAIN PAGE (KEBAL DARI LOCK SIDEBAR HP)
+with col_m5:
+    st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Refresh Data", use_container_width=True, key="main_refresh_action_v3"):
         st.cache_data.clear()
         st.rerun()
 
-    st.markdown("---")
-    st.caption("Dragon Fire v2.1 · KangTao Cari Cuan")
-
 # ==========================================
-# 6. TABS
+# 6. TABS LAYOUT
 # ==========================================
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊   LIVE SCREENER",
@@ -585,7 +625,7 @@ with tab3:
         search_btn = st.button("🔍 Analisis", use_container_width=True)
 
     if search_ticker:
-        # 🌟 PERBAIKAN MUTLAK: Cari langsung dari master database bursa lengkap (587 saham) agar ticker non-screener (seperti GDYR) bisa dibedah rinciannya
+        # Mencari langsung dari master database bursa lengkap (587 emiten) kebal dari status kriteria screening harian
         match = df_all_stocks[df_all_stocks['Ticker'] == search_ticker] if not df_all_stocks.empty else pd.DataFrame()
         source_label = "Database Utama BEI (Master Scan)"
         
@@ -675,7 +715,7 @@ with tab3:
 
 # --- TAB 4 · HISTORI HARIAN ---
 with tab4:
-    st.markdown('<div class="section-label">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
 
     if df_history.empty:
         st.markdown('<div class="info-box">💡 Belum ada rekam jejak histori. Data histori akan terkumpul otomatis setiap kali skrip cloud backend berjalan secara sukses.</div>', unsafe_allow_html=True)
@@ -710,7 +750,6 @@ with tab4:
         c2.metric("Sinyal BUY Aktif", n_h_buy)
         c3.metric("Tanggal Laporan", str(selected_date))
 
-        # 🌟 PERBAIKAN INTERAKTIF: Kolom input pencarian khusus untuk melacak ticker manual (seperti GDYR) pada arsip histori masa lalu
         search_hist_ticker = st.text_input("🔍 Cari Ticker Spesifik dalam Arsip Tanggal Ini:", placeholder="Masukkan kode emiten (Contoh: GDYR, BBCA...)", key="hist_srch").strip().upper()
         if search_hist_ticker:
             df_hist_clean = df_hist_clean[df_hist_clean['Ticker'] == search_hist_ticker].reset_index(drop=True)
