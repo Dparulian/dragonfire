@@ -70,7 +70,6 @@ html, body, [data-testid="stAppViewContainer"] {
 
 /* ---- METRIC CARDS ---- */
 .metric-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
-.metric-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .metric-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -293,13 +292,15 @@ def fetch_chart_data(ticker):
 df_screener = fetch_cloud_data('screener_live').rename(columns=peta_kolom)
 df_watchlist = fetch_cloud_data('watchlist_live').rename(columns=peta_kolom)
 df_history   = fetch_cloud_data('screener_history').rename(columns=peta_kolom)
+# 🌟 TAMBAHAN MASTER: Ambil data seluruh 587 emiten bursa dari awan
+df_all_stocks = fetch_cloud_data('all_stocks_live').rename(columns=peta_kolom)
 
 # ==========================================
 # 4. HELPER FUNCTIONS
 # ==========================================
 def classify_action(action_str):
     a = str(action_str).upper()
-    if "BUY NOW" in a or "STRONG BUY" in a or "ACCUMULATION BUY" in a:  return "buy-now",  action_str
+    if "BUY" in a or "STRONG BUY" in a or "ACCUMULATION" in a:  return "buy-now",  action_str
     if "SCALPING" in a:                        return "scalping", "SCALPING"
     if "WATCH" in a or "PANTAU" in a:          return "watch",    action_str
     if "HOLD" in a:                            return "hold",     "HOLD"
@@ -455,20 +456,16 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📅   HISTORI HARIAN"
 ])
 
-# ─────────────────────────────────────────
-# TAB 1 · LIVE SCREENER
-# ─────────────────────────────────────────
+# --- TAB 1 · LIVE SCREENER ---
 with tab1:
     if df_screener.empty:
         st.markdown('<div class="warn-box">⚠️ Belum ada data screener_live di database cloud. Jalankan dragon_fire.py terlebih dahulu.</div>', unsafe_allow_html=True)
     else:
-        # Top 3 Picks
         st.markdown('<div class="section-label">🏆 Top Alpha Velocity Picks — CVI Tertinggi Hari Ini</div>', unsafe_allow_html=True)
         top3 = df_screener.sort_values('CVI', ascending=False).head(3)
         medals = ['gold', 'silver', 'bronze']
         ranks  = ['🥇 #1 Alpha Pick', '🥈 #2 Runner Up', '🥉 #3 Momentum']
         
-        # 🌟 PERBAIKAN 1: Mengubah kolom dari statis 3 menjadi dinamis/adaptif
         cols3  = st.columns(len(top3) if len(top3) > 0 else 1)
         for i, (_, row) in enumerate(top3.iterrows()):
             with cols3[i]:
@@ -486,7 +483,6 @@ with tab1:
 
         st.write("")
 
-        # Filter + Sort controls
         col_f1, col_f2, col_f3 = st.columns([3, 2, 1.5])
         with col_f1:
             all_actions = sorted(df_screener['Rekomendasi_Action'].dropna().unique().tolist())
@@ -532,9 +528,7 @@ with tab1:
             use_container_width=False
         )
 
-# ─────────────────────────────────────────
-# TAB 2 · WATCHLIST
-# ─────────────────────────────────────────
+# --- TAB 2 · WATCHLIST ---
 with tab2:
     if df_watchlist.empty:
         st.markdown('<div class="info-box">💡 Belum ada data watchlist_live. Pastikan file Excel watchlist sudah ada di folder WATCHLIST dan dragon_fire.py sudah dijalankan.</div>', unsafe_allow_html=True)
@@ -573,24 +567,24 @@ with tab2:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-# ─────────────────────────────────────────
-# TAB 3 · DIAGNOSTIK TICKER + CHART
-# ─────────────────────────────────────────
+# --- TAB 3 · DIAGNOSTIK TICKER + CHART ---
 with tab3:
     st.markdown('<div class="section-label">🔍 Diagnostik & Chart Per Emiten</div>', unsafe_allow_html=True)
     st.markdown('<div class="info-box">Ketik kode saham IDX untuk melihat analisis kuantitatif lengkap beserta chart candlestick interaktif 90 hari.</div>', unsafe_allow_html=True)
 
     col_inp, col_btn = st.columns([4, 1])
     with col_inp:
-        search_ticker = st.text_input("", placeholder="Contoh: BBCA, TLKM, MGRO ...",
+        search_ticker = st.text_input("", placeholder="Contoh: BBCA, TLKM, MGRO, GDYR ...",
                                        label_visibility="collapsed").strip().upper()
     with col_btn:
         st.write("")  
         search_btn = st.button("🔍 Analisis", use_container_width=True)
 
     if search_ticker:
-        match = df_screener[df_screener['Ticker'] == search_ticker] if not df_screener.empty else pd.DataFrame()
-        source_label = "Screener Live"
+        # 🌟 PERBAIKAN MUTLAK: Cari langsung dari master database bursa lengkap (587 saham) agar ticker non-screener (seperti GDYR) bisa dibedah rinciannya
+        match = df_all_stocks[df_all_stocks['Ticker'] == search_ticker] if not df_all_stocks.empty else pd.DataFrame()
+        source_label = "Database Utama BEI (Master Scan)"
+        
         if match.empty and not df_watchlist.empty:
             match = df_watchlist[df_watchlist['Ticker'] == search_ticker]
             source_label = "Watchlist"
@@ -671,22 +665,16 @@ with tab3:
 
             st.markdown('<div class="section-label">📈 Chart Candlestick + Bollinger Bands (90 Hari)</div>', unsafe_allow_html=True)
             render_chart(search_ticker, row)
-
         else:
-            st.error(f"❌ Kode saham **{search_ticker}** tidak ditemukan dalam screener aktif atau watchlist hari ini.")
-            st.markdown('<div class="info-box">💡 Coba jalankan skrip harian otomatis untuk memperbarui data, atau periksa kode ticker BEI Anda.</div>', unsafe_allow_html=True)
-
-            st.markdown(f'<div class="section-label">📈 Chart {search_ticker} — Data Market Langsung</div>', unsafe_allow_html=True)
+            st.error(f"❌ Kode saham **{search_ticker}** tidak ditemukan dalam master database bursa aktif harian.")
             render_chart(search_ticker)
 
-# ─────────────────────────────────────────
-# TAB 4 · HISTORI HARIAN
-# ─────────────────────────────────────────
+# --- TAB 4 · HISTORI HARIAN ---
 with tab4:
     st.markdown('<div class="section-label">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
 
     if df_history.empty:
-        st.markdown('<div class="info-box">💡 Belum ada rekam jejak histori. Data histori akan terkumpul otomatis setiap kali skrip cloud backend berjalan.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="info-box">💡 Belum ada rekam jejak histori. Data histori akan terkumpul otomatis setiap kali skrip cloud backend berjalan secara sukses.</div>', unsafe_allow_html=True)
     else:
         available_dates = sorted(df_history['Tanggal_Scan'].unique().tolist(), reverse=True)
 
@@ -697,9 +685,8 @@ with tab4:
         df_hist_display = df_history[df_history['Tanggal_Scan'] == selected_date]
         df_hist_clean   = df_hist_display.drop(columns=['Tanggal_Scan'], errors='ignore').reset_index(drop=True)
 
-        # 🌟 PERBAIKAN 2: Penyelarasan Tombol Download Sejajar Horisontal di Sebelah Kanan Dropdown Tanggal
         with col_dl:
-            st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)  # Penyelaras tinggi label dropdown
+            st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
             excel_hist = make_excel_download(df_hist_clean, sheet_name=f"Histori_{selected_date}")
             st.download_button(
                 label=f"⬇️ Download Histori (.xlsx)",
@@ -716,8 +703,13 @@ with tab4:
         st.write("")
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Emiten Scan", n_h)
-        c2.metric("Sinyal BUY", n_h_buy)
+        c2.metric("Sinyal BUY Aktif", n_h_buy)
         c3.metric("Tanggal Laporan", str(selected_date))
+
+        # 🌟 PERBAIKAN INTERAKTIF: Kolom input pencarian khusus untuk melacak ticker manual (seperti GDYR) pada arsip histori masa lalu
+        search_hist_ticker = st.text_input("🔍 Cari Ticker Spesifik dalam Arsip Tanggal Ini:", placeholder="Masukkan kode emiten (Contoh: GDYR, BBCA...)", key="hist_srch").strip().upper()
+        if search_hist_ticker:
+            df_hist_clean = df_hist_clean[df_hist_clean['Ticker'] == search_hist_ticker].reset_index(drop=True)
 
         st.dataframe(
             df_hist_clean, 
