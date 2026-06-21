@@ -341,7 +341,6 @@ if RUN_AUTOMATED_WATCHLIST:
         if watchlist_results:
             df_watch_export = pd.DataFrame(watchlist_results).sort_values(by='CVI', ascending=False)
             
-            # 🌟 PERBAIKAN BENTENG: Pastikan db_engine ada sebelum melakukan to_sql agar tidak memicu NameError
             if IS_CLOUD and 'db_engine' in locals() or 'db_engine' in globals():
                 try:
                     df_watch_export.to_sql('watchlist_live', db_engine, if_exists='replace', index=False)
@@ -350,6 +349,12 @@ if RUN_AUTOMATED_WATCHLIST:
                     print(f"❌ Gagal mengupload watchlist ke cloud database: {e}")
             else:
                 print("⚠️ Cloud Engine tidak aktif/gagal inisialisasi. Data watchlist dilewati secara aman.")
+                
+    # 🌟 KUNCI SOLUSI: Tambahkan 2 baris ini (Pastikan sejajar 4 spasi ke dalam)
+    print("💤 Seluruh proses cloud selesai. Sistem otomatisasi dimatikan secara bersih.")
+    sys.exit() # <-- Memaksa server GitHub berhenti di sini dan melaporkan status "Success" ✅
+
+# Baris di bawah ini sekarang aman, hanya akan dieksekusi jika kamu running manual di laptop
 print("\n" + "="*90)
 print("💻 COMMAND CENTER INTERAKTIF LOCAL MODE")
 print("• Ketik 'WATCH'  : Evaluasi massal & ekspor otomatis")
