@@ -377,7 +377,7 @@ print("💻 COMMAND CENTER INTERAKTIF LOCAL MODE")
 print("• Ketik 'WATCH'  : Evaluasi massal & ekspor otomatis")
 print("• Ketik 'TICKER' : Evaluasi manual satu per satu")
 print("• Ketik 'EXIT'   : Keluar dari program")
-print("="0)
+print("="*90)
 
 while True:
     try:
