@@ -183,29 +183,17 @@ def simpan_grafik(df, ticker, kategori):
 # ==========================================
 # 3. MAIN RUNNING ENGINE & TRAINING LOOP
 # ==========================================
-FILE_TICKER = 'Ticker Saham.csv'
-if not os.path.exists(FILE_TICKER) and os.path.exists('TIcker Saham.csv'):
-    FILE_TICKER = 'TIcker Saham.csv'
+# 🌟 PERBAIKAN MUTLAK: Gunakan nama file huruf kecil murni tanpa spasi untuk membuang bug memori Git
+FILE_TICKER = 'daftar_saham.csv'
 
 if not os.path.exists(FILE_TICKER):
     print(f"❌ Master file ticker '{FILE_TICKER}' tidak ditemukan."); sys.exit()
 
-try:
-    df_ticker = pd.read_csv(FILE_TICKER, sep=None, engine='python')
-except:
-    try:
-        df_ticker = pd.read_csv(FILE_TICKER, sep=';')
-    except:
-        df_ticker = pd.read_csv(FILE_TICKER)
+# 🌟 PERBAIKAN BARU: Tambahkan header=None karena file CSV Anda adalah satu kolom murni tanpa nama judul tabel
+df_ticker = pd.read_csv(FILE_TICKER, header=None, sep=None, engine='python')
 
-# 🌟 PERBAIKAN 1: Bersihkan nama kolom dari spasi dan karakter tak terlihat (BOM Excel)
-df_ticker.columns = df_ticker.columns.str.strip().str.replace('﻿', '', regex=False)
-
-target_keywords = ['KODE', 'TICKER', 'EMITEN', 'CODE', 'SYMBOL', 'SAHAM']
-matched_cols = [col for col in df_ticker.columns if any(kw in str(col).upper() for kw in target_keywords)]
-target_col = matched_cols[0] if matched_cols else df_ticker.columns[0]
-
-print(f"📋 Menggunakan kolom '{target_col}' sebagai basis pencarian kode emiten bursa.")
+# Ambil kolom pertama secara dinamis
+target_col = df_ticker.columns[0]
 
 # Ekstraksi dan pembersihan seluruh populasi emiten bursa secara aman
 DAFTAR_SAHAM_RAW = df_ticker[target_col].dropna().astype(str).tolist()
@@ -222,7 +210,7 @@ total_tickers = len(DAFTAR_SAHAM)
 print(f"🐉 Berhasil menemukan {total_tickers} emiten bursa unik dalam file CSV Anda.")
 print(f"📋 Sampel 10 emiten pertama yang dibaca: {DAFTAR_SAHAM[:10]}")
 
-# 🌟 PERBAIKAN 2: Mengunduh data bursa dalam format Batch per 100 Emiten (Anti-Rate-Limit Yahoo Finance)
+# 🌟 PERBAIKAN BATCH DOWNLOADER (Anti-Rate-Limit Yahoo Finance)
 print("🌐 Mengunduh data historis bursa secara aman dari Yahoo Finance...")
 batch_size = 100
 all_raw_dfs = []
