@@ -25,6 +25,9 @@ FOLDER_WATCHLIST = 'WATCHLIST'
 
 MIN_CMF      = -0.05
 MIN_UD_RATIO =  1.20
+# Filter likuiditas minimum — mencegah anomali CVI meledak pada saham tidak
+# diperdagangkan seperti BKDP (Vol_Ratio=0 → BB_Width=0 → CVI=tak terhingga)
+MIN_VOL_RATIO = 0.01
 
 # Threshold MACD Pre-Crossover: MACD fast line masih negatif tapi
 # sudah dalam jarak <= MACD_PROXIMITY_PCT dari zero line
@@ -489,11 +492,12 @@ df_all_export = df_latest_global[[
 ]].copy()
 df_all_export.columns = cols_final
 
-# Screener: filter original
+# Screener: filter original + filter likuiditas anti-anomali (BKDP fix)
 dragon_candidates = df_latest_global[
     (df_latest_global['BB_Width']     <= BB_WIDTH_MAX) &
     (df_latest_global['CMF']          >= MIN_CMF) &
-    (df_latest_global['UD_Vol_Ratio'] >= MIN_UD_RATIO)
+    (df_latest_global['UD_Vol_Ratio'] >= MIN_UD_RATIO) &
+    (df_latest_global['Vol_Ratio']    >= MIN_VOL_RATIO)   # ← filter baru: min likuiditas
 ].copy()
 
 if not dragon_candidates.empty:
