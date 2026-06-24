@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine, text
 from datetime import datetime
+import pytz
 import urllib.parse
 import io
 
@@ -194,6 +195,16 @@ def fetch_chart_data(ticker):
     except Exception:
         return pd.DataFrame()
 
+# ── Waktu Jakarta (GMT+7) ────────────────────────────────────────
+_TZ_JKT = pytz.timezone('Asia/Jakarta')
+
+def now_jkt():
+    """Kembalikan datetime sekarang dalam timezone Jakarta (GMT+7)."""
+    return datetime.now(_TZ_JKT)
+
+def now_str_jkt():
+    return now_jkt().strftime('%d %b %Y · %H:%M WIB')
+
 # ── Portfolio persistence via Supabase ────────────────────────────
 def ensure_portfolio_table():
     """Buat tabel portfolio jika belum ada."""
@@ -232,6 +243,49 @@ def remove_portfolio_ticker(ticker):
     try:
         with engine.connect() as conn:
             conn.execute(text("DELETE FROM portfolio_tickers WHERE ticker = :t"), {"t": ticker.upper()})
+            conn.commit()
+        return True
+    except Exception:
+        return False
+
+# ── Monitor persistence via Supabase ─────────────────────────────
+def ensure_monitor_table():
+    """Buat tabel monitor jika belum ada."""
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS monitor_tickers (
+                    ticker VARCHAR(10) PRIMARY KEY,
+                    added_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+            conn.commit()
+    except Exception:
+        pass
+
+def load_monitor():
+    try:
+        ensure_monitor_table()
+        df = pd.read_sql('SELECT ticker FROM monitor_tickers ORDER BY added_at', engine)
+        return df['ticker'].str.upper().tolist()
+    except Exception:
+        return []
+
+def add_monitor_ticker(ticker):
+    try:
+        with engine.connect() as conn:
+            conn.execute(text(
+                "INSERT INTO monitor_tickers (ticker) VALUES (:t) ON CONFLICT DO NOTHING"
+            ), {"t": ticker.upper().strip()})
+            conn.commit()
+        return True
+    except Exception:
+        return False
+
+def remove_monitor_ticker(ticker):
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("DELETE FROM monitor_tickers WHERE ticker = :t"), {"t": ticker.upper()})
             conn.commit()
         return True
     except Exception:
@@ -390,7 +444,7 @@ def render_chart(ticker, row=None):
 # ══════════════════════════════════════════════════════
 # 5. HEADER + SIDEBAR
 # ══════════════════════════════════════════════════════
-now_str = datetime.now().strftime('%d %b %Y · %H:%M WIB')
+now_str = now_str_jkt()
 
 st.markdown(f"""
 <div class="hdr">
@@ -445,12 +499,13 @@ with st.sidebar:
     st.caption(f"Dragon Fire v4.0 · KangTao Cari Cuan\n\n{now_str}")
 
 # ══════════════════════════════════════════════════════
-# 6. MAIN TABS (5 tabs)
+# 6. MAIN TABS (6 tabs)
 # ══════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊  LIVE SCREENER",
     "📋  WATCHLIST",
     "💼  PORTOFOLIO SAYA",
+    "👁  MONITOR",
     "🔍  DIAGNOSTIK TICKER",
     "📅  HISTORI HARIAN"
 ])
@@ -550,17 +605,17 @@ with tab1:
             })
         st.download_button("⬇️ Download Screener (.xlsx)",
             data=to_excel(df_d[dcols], "Screener_Live"),
-            file_name=f"DragonFire_Screener_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            file_name=f"DragonFire_Screener_{now_jkt().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ─────────────────────────────────────────────────────
-# TAB 2 · WATCHLIST (upload file + hasil screener DB)
+# TAB 2 · WATCHLIST — Upload file harian saja
 # ─────────────────────────────────────────────────────
 with tab2:
-    st.markdown('<div class="slabel">📋 Watchlist — Upload File Harian atau Lihat Data DB</div>', unsafe_allow_html=True)
+    st.markdown('<div class="slabel">📋 Watchlist — Upload File Harian</div>', unsafe_allow_html=True)
 
     # Upload file watchlist harian
-    st.markdown('<div class="abox abox-info">Upload file watchlist harian Anda (Excel .xlsx). Dashboard akan mencocokkan ticker dengan hasil screener terbaru dari database.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="abox abox-info">Upload file watchlist harian Anda (.xlsx). Dashboard akan mencocokkan setiap ticker dengan data screener terbaru dari database secara otomatis.</div>', unsafe_allow_html=True)
 
     uploaded_wl = st.file_uploader("Upload Watchlist Excel (.xlsx)", type=['xlsx'], key="wl_upload",
                                    label_visibility="collapsed")
@@ -614,57 +669,36 @@ with tab2:
                     if n_wl_alert > 0:
                         st.markdown(f'<div class="abox abox-err">🚨 {n_wl_alert} saham watchlist Anda memiliki alert anti-trap! Periksa kolom Alert_Flag segera.</div>', unsafe_allow_html=True)
 
-                    show_cols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str',
-                                             'Vol_Ratio','Vol_Velocity','Hari_Ke_Breakout',
+                    # Support & Resistance ditambahkan
+                    show_cols = [c for c in ['Ticker','Close','Support','Resistance','CMF','UD_Vol_Ratio',
+                                             'BB_Width_Str','Vol_Ratio','Vol_Velocity','Hari_Ke_Breakout',
                                              'Potensial_Upsize','CVI','MACD','MACD_PreCross',
                                              'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action']
                                  if c in df_wl_result.columns]
                     st.dataframe(df_wl_result[show_cols].reset_index(drop=True),
                         use_container_width=True, height=420,
                         column_config={
-                            "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                            "CVI":           st.column_config.NumberColumn("CVI", format="%.3f"),
+                            "Close":         st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
+                            "Support":       st.column_config.NumberColumn("Support",    format="Rp %,.0f"),
+                            "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
+                            "CVI":           st.column_config.NumberColumn("CVI",        format="%.3f"),
                             "Vol_Ratio":     st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
                             "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
-                            "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
-                            "Rekomendasi_Action": st.column_config.TextColumn("Action", width=200),
+                            "Alert_Flag":    st.column_config.TextColumn("🚨 Alert",    width=130),
+                            "Rekomendasi_Action": st.column_config.TextColumn("Action",  width=200),
                         })
                     if not_found:
                         st.markdown(f'<div class="abox abox-warn">⚠ {len(not_found)} ticker tidak ditemukan di database: {", ".join(not_found[:10])}{"..." if len(not_found)>10 else ""}</div>', unsafe_allow_html=True)
                     st.download_button("⬇️ Download Hasil Watchlist (.xlsx)",
                         data=to_excel(df_wl_result[show_cols], "Watchlist_Analisis"),
-                        file_name=f"DragonFire_Watchlist_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        file_name=f"DragonFire_Watchlist_{now_jkt().strftime('%Y%m%d')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 else:
-                    st.markdown('<div class="abox abox-warn">⚠ Tidak ada ticker dari watchlist yang ditemukan di database.</div>', unsafe_allow_html=True)
+                    st.markdown('<div class="abox abox-warn">⚠ Tidak ada ticker dari watchlist yang ditemukan di database. Pastikan dragon_fire.py sudah dijalankan hari ini.</div>', unsafe_allow_html=True)
         except Exception as ex:
             st.markdown(f'<div class="abox abox-err">❌ Gagal membaca file: {ex}</div>', unsafe_allow_html=True)
-
-    elif not df_watchlist.empty:
-        # Tampilkan watchlist DB lama jika tidak ada upload
-        st.markdown('<div class="abox abox-info">💡 Menampilkan data watchlist terakhir dari database. Upload file untuk memperbarui.</div>', unsafe_allow_html=True)
-        n_wb  = len(df_watchlist[df_watchlist['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION", na=False)]) if 'Rekomendasi_Action' in df_watchlist.columns else 0
-        n_wm  = int(df_watchlist['MACD_PreCross'].sum()) if 'MACD_PreCross' in df_watchlist.columns else 0
-        n_wa  = int(df_watchlist['Alert_Flag'].str.len().gt(0).sum()) if 'Alert_Flag' in df_watchlist.columns else 0
-        c1,c2,c3,c4 = st.columns(4)
-        c1.metric("Total DB Watchlist", n_wl)
-        c2.metric("Sinyal BUY", n_wb)
-        c3.metric("⚡ MACD PreCross", n_wm)
-        c4.metric("🚨 Alert", n_wa)
-        wcols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str','Vol_Ratio',
-                              'Hari_Ke_Breakout','Potensial_Upsize','CVI','MACD','MACD_PreCross',
-                              'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_watchlist.columns]
-        df_ws = df_watchlist.sort_values('CVI', ascending=False) if 'CVI' in df_watchlist.columns else df_watchlist
-        st.dataframe(df_ws[wcols].reset_index(drop=True), use_container_width=True, height=420,
-            column_config={
-                "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                "CVI":           st.column_config.NumberColumn("CVI", format="%.3f"),
-                "Vol_Ratio":     st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
-                "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
-                "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
-            })
     else:
-        st.markdown('<div class="abox abox-info">💡 Upload file watchlist harian Anda di atas, atau jalankan dragon_fire.py terlebih dahulu.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="abox abox-warn">💡 Belum ada file yang diupload. Upload file watchlist harian Anda di atas.</div>', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────
 # TAB 3 · PORTOFOLIO SAYA
@@ -812,13 +846,149 @@ with tab3:
                 st.write("")
                 st.download_button("⬇️ Download Snapshot Portofolio (.xlsx)",
                     data=to_excel(df_snap[snap_cols], "Portofolio"),
-                    file_name=f"DragonFire_Portfolio_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"DragonFire_Portfolio_{now_jkt().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ─────────────────────────────────────────────────────
-# TAB 4 · DIAGNOSTIK TICKER
+# TAB 4 · MONITOR — Saham Pantau Manual
 # ─────────────────────────────────────────────────────
 with tab4:
+    st.markdown('<div class="slabel">👁 Monitor — Daftar Saham Pantau Manual</div>', unsafe_allow_html=True)
+    st.markdown('<div class="abox abox-info">Tambahkan ticker saham yang ingin Anda pantau secara khusus — bisa dari hasil screening, rekomendasi eksternal, atau saham yang sedang dalam radar Anda. Data diperbarui otomatis setiap kali dragon_fire.py dijalankan.</div>', unsafe_allow_html=True)
+
+    # Input tambah ticker
+    m_col1, m_col2 = st.columns([3, 1])
+    with m_col1:
+        new_mon_ticker = st.text_input("", placeholder="Ketik kode saham lalu klik Tambah (misal: BBCA, GDYR, CMPP)",
+                                       key="mon_input", label_visibility="collapsed").strip().upper()
+    with m_col2:
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        add_mon_btn = st.button("➕ Tambah ke Monitor", use_container_width=True)
+
+    if add_mon_btn and new_mon_ticker:
+        if add_monitor_ticker(new_mon_ticker):
+            st.success(f"✅ {new_mon_ticker} berhasil ditambahkan ke daftar monitor.")
+            st.rerun()
+        else:
+            st.warning(f"⚠ Gagal menambahkan {new_mon_ticker}. Mungkin sudah ada atau terjadi error database.")
+
+    monitor_tickers = load_monitor()
+
+    if not monitor_tickers:
+        st.markdown('<div class="abox abox-warn">💡 Daftar monitor masih kosong. Tambahkan ticker yang ingin dipantau di atas.</div>', unsafe_allow_html=True)
+    else:
+        # Ambil data terbaru untuk semua ticker monitor
+        mon_data   = []
+        danger_list_m = []
+        macd_list_m   = []
+
+        for t in monitor_tickers:
+            row_data, src = get_latest_data_for_ticker(t)
+            if row_data:
+                row_data['_src'] = src
+                mon_data.append((t, row_data))
+                action     = str(row_data.get('Rekomendasi_Action', ''))
+                alert_flag = str(row_data.get('Alert_Flag', ''))
+                if 'HINDARI' in action.upper() or 'DISTRIBUSI' in action.upper() or alert_flag:
+                    danger_list_m.append(t)
+                if row_data.get('MACD_PreCross', False):
+                    macd_list_m.append(t)
+            else:
+                mon_data.append((t, None))
+
+        # Summary metrics
+        c1,c2,c3,c4 = st.columns(4)
+        c1.metric("Total Monitor",    len(monitor_tickers))
+        c2.metric("🚨 Perlu Perhatian", len(danger_list_m))
+        c3.metric("⚡ MACD Naik",      len(macd_list_m))
+        c4.metric("Tidak Ada Data",   sum(1 for _, r in mon_data if r is None))
+
+        if danger_list_m:
+            st.markdown(f'<div class="abox abox-err">🚨 <strong>PERINGATAN</strong> — Saham berikut menunjukkan sinyal distribusi: <strong>{", ".join(danger_list_m)}</strong>. Evaluasi segera.</div>', unsafe_allow_html=True)
+        if macd_list_m:
+            st.markdown(f'<div class="abox abox-macd">⚡ Saham berikut memiliki MACD mendekati crossing zero: <strong>{", ".join(macd_list_m)}</strong></div>', unsafe_allow_html=True)
+
+        st.markdown('<div class="slabel">TABEL STATUS REAL-TIME</div>', unsafe_allow_html=True)
+
+        # Susun sebagai tabel (bukan kartu seperti portfolio)
+        valid_rows = [(t, r) for t, r in mon_data if r is not None]
+        if valid_rows:
+            tbl_data = []
+            for t, r in valid_rows:
+                action     = str(r.get('Rekomendasi_Action', '—'))
+                alert_flag = str(r.get('Alert_Flag', ''))
+                is_danger  = 'HINDARI' in action.upper() or 'DISTRIBUSI' in action.upper() or bool(alert_flag)
+                is_macd    = r.get('MACD_PreCross', False)
+                tbl_data.append({
+                    'Ticker':              t,
+                    'Close':               r.get('Close'),
+                    'Support':             r.get('Support'),
+                    'Resistance':          r.get('Resistance'),
+                    'CMF':                 r.get('CMF'),
+                    'UD_Vol_Ratio':        r.get('UD_Vol_Ratio'),
+                    'BB_Width_Str':        r.get('BB_Width_Str'),
+                    'Vol_Ratio':           r.get('Vol_Ratio'),
+                    'Hari_Ke_Breakout':    r.get('Hari_Ke_Breakout'),
+                    'Potensial_Upsize':    r.get('Potensial_Upsize'),
+                    'CVI':                 r.get('CVI'),
+                    'MACD':                r.get('MACD'),
+                    'MACD_PreCross':       is_macd,
+                    'Alert_Flag':          alert_flag,
+                    'Analisis_Kesimpulan': r.get('Analisis_Kesimpulan'),
+                    'Rekomendasi_Action':  action,
+                    '_src':                r.get('_src', ''),
+                })
+
+            df_mon_tbl = pd.DataFrame(tbl_data)
+            # Sort: danger atas, lalu MACD, lalu CVI
+            df_mon_tbl['_danger'] = df_mon_tbl['Ticker'].isin(danger_list_m).astype(int)
+            df_mon_tbl['_macd']   = df_mon_tbl['MACD_PreCross'].astype(int)
+            if 'CVI' in df_mon_tbl.columns:
+                df_mon_tbl = df_mon_tbl.sort_values(['_danger','_macd','CVI'], ascending=[False,False,False])
+            df_mon_tbl = df_mon_tbl.drop(columns=['_danger','_macd','_src'], errors='ignore')
+
+            disp_cols = [c for c in ['Ticker','Close','Support','Resistance','CMF','UD_Vol_Ratio',
+                                      'BB_Width_Str','Vol_Ratio','Hari_Ke_Breakout','Potensial_Upsize',
+                                      'CVI','MACD','MACD_PreCross','Alert_Flag',
+                                      'Analisis_Kesimpulan','Rekomendasi_Action']
+                         if c in df_mon_tbl.columns]
+            st.dataframe(df_mon_tbl[disp_cols].reset_index(drop=True),
+                use_container_width=True, height=420,
+                column_config={
+                    "Close":         st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
+                    "Support":       st.column_config.NumberColumn("Support",    format="Rp %,.0f"),
+                    "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
+                    "CVI":           st.column_config.NumberColumn("CVI",        format="%.3f"),
+                    "Vol_Ratio":     st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
+                    "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
+                    "Alert_Flag":    st.column_config.TextColumn("🚨 Alert",    width=130),
+                    "Rekomendasi_Action": st.column_config.TextColumn("Action",  width=200),
+                })
+
+            # Download snapshot
+            st.download_button("⬇️ Download Snapshot Monitor (.xlsx)",
+                data=to_excel(df_mon_tbl[disp_cols], "Monitor"),
+                file_name=f"DragonFire_Monitor_{now_jkt().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        # Ticker tidak ada data
+        no_data_tickers = [t for t, r in mon_data if r is None]
+        if no_data_tickers:
+            st.markdown(f'<div class="abox abox-warn">⚠ Ticker berikut tidak ditemukan di database: <strong>{", ".join(no_data_tickers)}</strong></div>', unsafe_allow_html=True)
+
+        # Hapus ticker dari monitor
+        st.markdown('<div class="slabel" style="margin-top:14px">KELOLA DAFTAR MONITOR</div>', unsafe_allow_html=True)
+        cols_del = st.columns(min(len(monitor_tickers), 6))
+        for i, t in enumerate(monitor_tickers):
+            with cols_del[i % 6]:
+                if st.button(f"🗑 {t}", key=f"del_mon_{t}", use_container_width=True):
+                    remove_monitor_ticker(t)
+                    st.rerun()
+
+# ─────────────────────────────────────────────────────
+# TAB 5 · DIAGNOSTIK TICKER
+# ─────────────────────────────────────────────────────
+with tab5:
     st.markdown('<div class="slabel">🔍 Diagnostik & Chart Per Emiten</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="abox abox-info">📡 Basis data: <strong>{n_all} emiten</strong>. Ketik kode saham BEI (tanpa .JK).</div>', unsafe_allow_html=True)
 
@@ -890,9 +1060,9 @@ with tab4:
             render_chart(search_ticker)
 
 # ─────────────────────────────────────────────────────
-# TAB 5 · HISTORI HARIAN
+# TAB 6 · HISTORI HARIAN
 # ─────────────────────────────────────────────────────
-with tab5:
+with tab6:
     st.markdown('<div class="slabel">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
     if df_history.empty or 'Tanggal_Scan' not in df_history.columns:
         st.markdown('<div class="abox abox-info">💡 Belum ada rekam histori.</div>', unsafe_allow_html=True)
