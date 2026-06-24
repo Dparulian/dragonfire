@@ -595,7 +595,7 @@ with tab1:
                               'Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_d.columns]
         st.dataframe(df_d[dcols].reset_index(drop=True), use_container_width=True, height=400,
             column_config={
-                "Ticker":         st.column_config.TextColumn("Ticker", width=70),
+                "Ticker":         st.column_config.TextColumn("Ticker", width=70, pinned=True),
                 "Close":          st.column_config.NumberColumn("Close", format="Rp %,.0f"),
                 "CVI":            st.column_config.NumberColumn("CVI", format="%.3f"),
                 "Vol_Ratio":      st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
@@ -678,6 +678,7 @@ with tab2:
                     st.dataframe(df_wl_result[show_cols].reset_index(drop=True),
                         use_container_width=True, height=420,
                         column_config={
+                            "Ticker":        st.column_config.TextColumn("Ticker",      width=70, pinned=True),
                             "Close":         st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
                             "Support":       st.column_config.NumberColumn("Support",    format="Rp %,.0f"),
                             "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
@@ -955,6 +956,7 @@ with tab4:
             st.dataframe(df_mon_tbl[disp_cols].reset_index(drop=True),
                 use_container_width=True, height=420,
                 column_config={
+                    "Ticker":        st.column_config.TextColumn("Ticker",      width=70, pinned=True),
                     "Close":         st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
                     "Support":       st.column_config.NumberColumn("Support",    format="Rp %,.0f"),
                     "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
@@ -1099,6 +1101,7 @@ with tab6:
                               'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_hd.columns]
         st.dataframe(df_hd[hcols], use_container_width=True, height=420,
             column_config={
+                "Ticker":        st.column_config.TextColumn("Ticker",  width=70, pinned=True),
                 "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
                 "CVI":           st.column_config.NumberColumn("CVI", format="%.3f"),
                 "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
