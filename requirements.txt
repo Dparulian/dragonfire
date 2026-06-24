@@ -8,3 +8,4 @@ scikit-learn
 mplfinance
 openpyxl
 plotly
+pytz
