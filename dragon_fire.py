@@ -5,7 +5,22 @@ import os
 import sys
 import glob
 from sklearn.ensemble import RandomForestRegressor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# ── Waktu Jakarta (GMT+7) — digunakan untuk Tanggal_Scan ──────────
+# GitHub Actions runner berjalan di UTC. datetime.now() tanpa timezone
+# akan menulis tanggal UTC, bukan WIB, sehingga histori muncul 1 hari
+# lebih awal dari yang seharusnya (contoh: skrip jalan 06:00 WIB =
+# 23:00 UTC hari sebelumnya → Tanggal_Scan salah satu hari).
+_WIB = timezone(timedelta(hours=7))
+
+def now_wib():
+    """Kembalikan datetime sekarang dalam WIB (UTC+7)."""
+    return datetime.now(tz=_WIB)
+
+def today_wib_str():
+    """Tanggal hari ini dalam format YYYY-MM-DD sesuai WIB."""
+    return now_wib().strftime('%Y-%m-%d')
 import warnings
 import mplfinance as mpf
 from sqlalchemy import create_engine, text
@@ -322,7 +337,7 @@ def simpan_grafik(df_plot, ticker, kategori):
             mpf.make_addplot(data_plot['BB_Lower'], color='green', alpha=0.6),
             mpf.make_addplot(data_plot['MA20'],     color='blue',  alpha=0.6),
         ]
-        filename = f"{ticker}_{kategori}_{datetime.now().strftime('%Y%m%d')}.png"
+        filename = f"{ticker}_{kategori}_{now_wib().strftime('%Y%m%d')}.png"
         filepath = os.path.join(FOLDER_CHART, filename)
         mc = mpf.make_marketcolors(up='g', down='r', edge='inherit', wick='inherit', volume='in')
         s  = mpf.make_mpf_style(marketcolors=mc, gridstyle=':', y_on_right=False)
@@ -543,7 +558,7 @@ if not dragon_candidates.empty:
             df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             df_histori = df_all_export.copy()
-            df_histori['Tanggal_Scan'] = datetime.now().strftime('%Y-%m-%d')
+            df_histori['Tanggal_Scan'] = today_wib_str()
             df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
             print(f"\n🚀 DATABASE SUCCESS:")
             print(f"   → screener_live   : {len(df_excel_simple)} baris")
@@ -553,7 +568,7 @@ if not dragon_candidates.empty:
             print(f"❌ DATABASE ERROR: {e}")
 
     # ── SIMPAN EXCEL LOKAL ────────────────────────────────────────
-    sheet_name_hari_ini = datetime.now().strftime('%Y-%B-%d')
+    sheet_name_hari_ini = now_wib().strftime('%Y-%B-%d')
     try:
         if os.path.exists(FILE_MASTER_EXCEL):
             with pd.ExcelWriter(FILE_MASTER_EXCEL, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
@@ -563,7 +578,7 @@ if not dragon_candidates.empty:
                 df_excel_simple.to_excel(writer, sheet_name=sheet_name_hari_ini, index=False)
         print(f"\n✅ Sheet '{sheet_name_hari_ini}' berhasil diperbarui.")
     except PermissionError:
-        err_time    = datetime.now().strftime("%H%M%S")
+        err_time    = now_wib().strftime("%H%M%S")
         backup_file = os.path.join(FOLDER_OUTPUT, f'Dragon_Screener_Master_LOCKED_{err_time}.xlsx')
         df_excel_simple.to_excel(backup_file, sheet_name=sheet_name_hari_ini, index=False)
         print(f"   💾 Diselamatkan ke: {backup_file}")
@@ -578,7 +593,7 @@ else:
         try:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             df_histori = df_all_export.copy()
-            df_histori['Tanggal_Scan'] = datetime.now().strftime('%Y-%m-%d')
+            df_histori['Tanggal_Scan'] = today_wib_str()
             df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
             print("🚀 Master DB tetap diupdate.")
         except Exception as e:
@@ -707,7 +722,7 @@ while True:
                         df_we.to_excel(writer, sheet_name='Watchlist_Analisis', index=False)
                     print(f"\n🚀 Sukses tersimpan ke sheet 'Watchlist_Analisis'.")
                 except PermissionError:
-                    err_time = datetime.now().strftime("%H%M%S")
+                    err_time = now_wib().strftime("%H%M%S")
                     backup_w = os.path.join(FOLDER_OUTPUT, f'Watchlist_LOCKED_{err_time}.xlsx')
                     df_we.to_excel(backup_w, index=False)
                     print(f"⚠️  Diselamatkan ke: {backup_w}")
