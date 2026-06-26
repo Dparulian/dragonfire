@@ -1,18 +1,16 @@
 name: Dragon Fire Automated Cloud Engine
 
 on:
-  # ── HANYA schedule, tidak ada workflow_dispatch ──────────────────
-  # workflow_dispatch dihilangkan untuk mencegah double-run manual.
-  # Jika perlu jalankan manual: gunakan tombol "Re-run jobs" pada run
-  # terakhir, atau tambahkan kembali workflow_dispatch sementara.
+  # ── TRIGGER 1: Jalankan manual dari tab Actions GitHub ───────────
+  # Buka github.com/Dparulian/dragonfire → tab Actions →
+  # pilih workflow ini → klik tombol "Run workflow" → klik "Run workflow"
+  # ⚠️  CATATAN: Jika dijalankan manual pada hari kerja setelah jam 18:00 WIB,
+  # script akan otomatis menghapus data hari ini di screener_history
+  # sebelum menulis ulang, sehingga tidak ada duplikat.
+  workflow_dispatch:
+
+  # ── TRIGGER 2: Otomatis Senin–Jumat pukul 18:00 WIB (= 11:00 UTC) ─
   schedule:
-    # Berjalan Senin–Jumat pukul 18:00 WIB tepat (= 11:00 UTC)
-    # Format: menit jam hari-bulan bulan hari-minggu
-    #   0   = menit ke-0 (tepat)
-    #   11  = jam 11 UTC = jam 18 WIB (UTC+7)
-    #   *   = setiap tanggal
-    #   *   = setiap bulan
-    #   1-5 = Senin (1) sampai Jumat (5)
     - cron: '0 11 * * 1-5'
 
 jobs:
