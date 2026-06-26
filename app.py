@@ -29,6 +29,8 @@ st.markdown("""
     --amber:#ffab00;--amber-dim:rgba(255,171,0,.10);
     --blue:#40c4ff;--blue-dim:rgba(64,196,255,.10);
     --purple:#c084fc;--purple-dim:rgba(192,132,252,.12);
+    --tiger:#f97316;--tiger-dim:rgba(249,115,22,.12);   /* Tiger orange */
+    --tiger-dark:#7c2d12;
     --text:#cdd9e5;--text-2:#768390;--text-3:#3d4f61;
     --font:'Inter','Segoe UI',sans-serif;
     --mono:'JetBrains Mono','Consolas',monospace;
@@ -114,7 +116,25 @@ div[data-testid="stMetricValue"]{font-family:var(--mono)!important;font-size:20p
 .port-alert-warn{background:var(--amber-dim);color:var(--amber);border:1px solid rgba(255,171,0,.3);}
 .port-alert-danger{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,23,68,.3);}
 .port-alert-macd{background:var(--purple-dim);color:var(--purple);border:1px solid rgba(192,132,252,.3);}
+/* ── ENGINE SELECTOR ── */
+.engine-bar{display:flex;gap:10px;margin-bottom:14px;align-items:center;}
+.engine-label{font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.8px;white-space:nowrap;}
+.engine-btn{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;
+    padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;color:var(--text-2);}
+.engine-btn:hover{border-color:var(--border-bright);}
+.engine-btn.active-fire{background:var(--fire-dim);border-color:var(--fire);color:var(--fire);}
+.engine-btn.active-tiger{background:var(--tiger-dim);border-color:var(--tiger);color:var(--tiger);}
+/* Tiger status badges */
+.b-breakout{background:rgba(249,115,22,.15);color:var(--tiger);border:1px solid rgba(249,115,22,.4);}
+.b-strongbuy{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.3);}
+.b-accum{background:rgba(64,196,255,.12);color:var(--blue);border:1px solid rgba(64,196,255,.3);}
+.b-superbull{background:rgba(192,132,252,.12);color:var(--purple);border:1px solid rgba(192,132,252,.3);}
+.b-watching{background:rgba(120,120,120,.1);color:var(--text-2);border:1px solid rgba(120,120,120,.2);}
+/* Tiger metric cards */
+.tiger-card{background:var(--bg-card);border:1px solid rgba(249,115,22,.3);border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;}
+.tiger-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2.5px;background:linear-gradient(90deg,var(--tiger),#fb923c);}
 #MainMenu,footer,header{visibility:hidden;}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -308,6 +328,49 @@ if _all_raw.empty:
 else:
     df_all_stocks = _all_raw
 
+# ── TIGER data loading ────────────────────────────────────────────
+TIGER_MAP = {
+    'ticker':'Ticker','harga':'Harga','kasta':'Kasta','status':'Status',
+    'status_rank':'Status_Rank','score':'Score','ai_conf':'AI_Conf',
+    'ai_conf_val':'AI_Conf_Val','rsi':'RSI','macd_hist':'MACD_Hist',
+    'cmf':'CMF','obv_slope':'OBV_Slope','vol_buildup':'Vol_Buildup',
+    'ichimoku':'Ichimoku','kijun':'Kijun','buy_area':'Buy_Area',
+    'target_price':'Target_Price','target_src':'Target_Src','stop_loss':'Stop_Loss',
+    'bb_width_str':'BB_Width_Str','cmf_raw':'CMF_Raw',
+    'ud_vol_ratio':'UD_Vol_Ratio','vol_ratio':'Vol_Ratio','prob_ai':'Prob_AI',
+    'dragon_kesimpulan':'Dragon_Kesimpulan','dragon_action':'Dragon_Action',
+    'ihsg_trend':'IHSG_Trend','sector_breadth':'Sector_Breadth',
+    'tanggal_scan':'Tanggal_Scan'
+}
+
+def normalize_tiger(df):
+    if df is None or df.empty: return pd.DataFrame()
+    df = df.copy()
+    df.columns = [c.lower().strip() for c in df.columns]
+    df = df.rename(columns=TIGER_MAP)
+    if 'Ticker' in df.columns:
+        df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
+    if 'Harga' in df.columns:
+        df['Harga'] = pd.to_numeric(df['Harga'], errors='coerce')
+    if 'Score' in df.columns:
+        df['Score'] = pd.to_numeric(df['Score'], errors='coerce')
+    return df
+
+df_tiger_screener = normalize_tiger(fetch_cloud_data('tiger_screener_live'))
+df_tiger_history  = normalize_tiger(fetch_cloud_data('tiger_history'))
+_tiger_all_raw    = normalize_tiger(fetch_cloud_data('tiger_all_stocks_live'))
+if _tiger_all_raw.empty:
+    frames_t = []
+    if not df_tiger_screener.empty: frames_t.append(df_tiger_screener)
+    if not df_tiger_history.empty:
+        th_latest = (df_tiger_history.sort_values('Tanggal_Scan', ascending=False)
+                     .drop_duplicates(subset='Ticker', keep='first')
+                     .drop(columns=['Tanggal_Scan'], errors='ignore'))
+        frames_t.append(th_latest)
+    df_tiger_all = pd.concat(frames_t, ignore_index=True).drop_duplicates(subset='Ticker', keep='first') if frames_t else pd.DataFrame()
+else:
+    df_tiger_all = _tiger_all_raw
+
 # ══════════════════════════════════════════════════════
 # 4. HELPERS
 # ══════════════════════════════════════════════════════
@@ -442,64 +505,141 @@ def render_chart(ticker, row=None):
     st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
 
 # ══════════════════════════════════════════════════════
-# 5. HEADER + SIDEBAR
+# 5. ENGINE SELECTOR + HEADER + SIDEBAR
 # ══════════════════════════════════════════════════════
 now_str = now_str_jkt()
 
+# ── Engine selector (persists via session_state) ──────────────────
+if 'active_engine' not in st.session_state:
+    st.session_state.active_engine = 'dragon'
+
+col_eng_lbl, col_fire, col_tiger, col_spacer = st.columns([1.5, 1.5, 1.5, 8])
+with col_eng_lbl:
+    st.markdown("<div style='padding-top:10px;font-size:11px;font-weight:700;"
+                "color:#768390;text-transform:uppercase;letter-spacing:.8px;"
+                "'>Pilih Mesin</div>", unsafe_allow_html=True)
+with col_fire:
+    if st.button("🐉 Dragon Fire", use_container_width=True,
+                 type="primary" if st.session_state.active_engine == 'dragon' else "secondary"):
+        st.session_state.active_engine = 'dragon'; st.rerun()
+with col_tiger:
+    if st.button("🐯 Tiger Hunter", use_container_width=True,
+                 type="primary" if st.session_state.active_engine == 'tiger' else "secondary"):
+        st.session_state.active_engine = 'tiger'; st.rerun()
+
+ENGINE = st.session_state.active_engine
+IS_TIGER = (ENGINE == 'tiger')
+
+# ── Dynamic header ────────────────────────────────────────────────
+if IS_TIGER:
+    hdr_icon  = "🐯"
+    hdr_title = "Tiger Hunter Dashboard"
+    hdr_sub   = f"Hybrid ML Engine · RF + LightGBM + XGBoost · {now_str}"
+    hdr_color = "var(--tiger)"
+    hdr_grad  = "linear-gradient(135deg,#2d0f00 0%,var(--bg-card) 55%,#0d1220 100%)"
+    hdr_border= "var(--tiger)"
+else:
+    hdr_icon  = "🐉"
+    hdr_title = "Dragon Fire Quant Dashboard"
+    hdr_sub   = f"Pusat Komando Velositas Modal & Detektor Akumulasi Bandar · {now_str}"
+    hdr_color = "var(--fire)"
+    hdr_grad  = "linear-gradient(135deg,#120600 0%,var(--bg-card) 55%,#071220 100%)"
+    hdr_border= "var(--fire)"
+
 st.markdown(f"""
-<div class="hdr">
-  <div class="hdr-icon">🐉</div>
+<div style="background:{hdr_grad};border:1px solid var(--border);
+    border-left:3px solid {hdr_border};border-radius:12px;
+    padding:18px 24px;margin-bottom:16px;display:flex;align-items:center;gap:16px;">
+  <div style="font-size:36px;line-height:1;">{hdr_icon}</div>
   <div>
-    <div class="hdr-title">Dragon Fire Quant Dashboard</div>
-    <div class="hdr-sub">Pusat Komando Velositas Modal & Detektor Akumulasi Bandar &nbsp;·&nbsp; {now_str}</div>
+    <div style="font-size:24px;font-weight:800;color:{hdr_color};
+        letter-spacing:-.5px;margin:0;">{hdr_title}</div>
+    <div style="font-size:12px;color:var(--text-2);margin:2px 0 0;">{hdr_sub}</div>
   </div>
 </div>""", unsafe_allow_html=True)
 
-n_sc    = len(df_screener)
-n_wl    = len(df_watchlist)
-n_all   = len(df_all_stocks)
-n_buy   = len(df_screener[df_screener['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION|NYICIL", na=False)]) if n_sc else 0
-n_macd  = int(df_screener['MACD_PreCross'].sum()) if n_sc and 'MACD_PreCross' in df_screener.columns else 0
-n_alert = int(df_all_stocks['Alert_Flag'].str.len().gt(0).sum()) if n_all and 'Alert_Flag' in df_all_stocks.columns else 0
-n_hist  = df_history['Tanggal_Scan'].nunique() if not df_history.empty and 'Tanggal_Scan' in df_history.columns else 0
+# ── KPI metrics (dynamic per engine) ─────────────────────────────
+if IS_TIGER:
+    n_t_sc     = len(df_tiger_screener)
+    n_t_all    = len(df_tiger_all)
+    n_t_brk    = len(df_tiger_screener[df_tiger_screener['Status'].str.contains("BREAKOUT", na=False)]) if n_t_sc else 0
+    n_t_sbuy   = len(df_tiger_screener[df_tiger_screener['Status'].str.contains("STRONG BUY", na=False)]) if n_t_sc else 0
+    n_t_accum  = len(df_tiger_screener[df_tiger_screener['Status'].str.contains("ACCUMULATION", na=False)]) if n_t_sc else 0
+    n_t_hist   = df_tiger_history['Tanggal_Scan'].nunique() if not df_tiger_history.empty and 'Tanggal_Scan' in df_tiger_history.columns else 0
+    cm1,cm2,cm3,cm4,cm5,cm6 = st.columns([1,1,1,1,2,1.2])
+    with cm1: st.markdown(f'<div class="mcard"><div class="lbl">Tiger Screener</div><div class="val" style="color:var(--tiger)">{n_t_sc}</div><div class="sub">Emiten lolos</div></div>', unsafe_allow_html=True)
+    with cm2: st.markdown(f'<div class="mcard"><div class="lbl">⚡ Breakout</div><div class="val" style="color:var(--amber)">{n_t_brk}</div><div class="sub">Volume explosion</div></div>', unsafe_allow_html=True)
+    with cm3: st.markdown(f'<div class="mcard"><div class="lbl">🚀 Strong Buy</div><div class="val" style="color:var(--green)">{n_t_sbuy}</div><div class="sub">AI high confidence</div></div>', unsafe_allow_html=True)
+    with cm4: st.markdown(f'<div class="mcard"><div class="lbl">📦 Accumulation</div><div class="val" style="color:var(--blue)">{n_t_accum}</div><div class="sub">BB squeeze aktif</div></div>', unsafe_allow_html=True)
+    with cm5:
+        if n_t_sc > 0 and 'Score' in df_tiger_screener.columns:
+            top_t = df_tiger_screener.sort_values('Score', ascending=False).iloc[0]
+            st.markdown(f"""<div class="mcard">
+                <div class="lbl">🥇 Top Score</div>
+                <div class="val" style="color:var(--tiger);font-size:17px;">{top_t.get('Ticker','—')}</div>
+                <div class="sub">Score {fmt_val(top_t.get('Score','—'))} · {fmt_val(top_t.get('Status','—'))[:20]}</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="mcard"><div class="lbl">Top Score</div><div class="val">—</div></div>', unsafe_allow_html=True)
+    with cm6:
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Refresh Data", use_container_width=True):
+            st.cache_data.clear(); st.rerun()
+else:
+    n_sc    = len(df_screener)
+    n_wl    = len(df_watchlist)
+    n_all   = len(df_all_stocks)
+    n_buy   = len(df_screener[df_screener['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION|NYICIL", na=False)]) if n_sc else 0
+    n_macd  = int(df_screener['MACD_PreCross'].sum()) if n_sc and 'MACD_PreCross' in df_screener.columns else 0
+    n_alert = int(df_all_stocks['Alert_Flag'].str.len().gt(0).sum()) if n_all and 'Alert_Flag' in df_all_stocks.columns else 0
+    n_hist  = df_history['Tanggal_Scan'].nunique() if not df_history.empty and 'Tanggal_Scan' in df_history.columns else 0
+    cm1,cm2,cm3,cm4,cm5,cm6 = st.columns([1,1,1,1,2,1.2])
+    with cm1: st.markdown(f'<div class="mcard"><div class="lbl">Screener Live</div><div class="val" style="color:var(--fire)">{n_sc}</div><div class="sub">Emiten aktif</div></div>', unsafe_allow_html=True)
+    with cm2: st.markdown(f'<div class="mcard"><div class="lbl">Sinyal BUY</div><div class="val" style="color:var(--green)">{n_buy}</div><div class="sub">Akumulasi terdeteksi</div></div>', unsafe_allow_html=True)
+    with cm3: st.markdown(f'<div class="mcard"><div class="lbl">⚡ MACD PreCross</div><div class="val" style="color:var(--purple)">{n_macd}</div><div class="sub">Prioritas masuk</div></div>', unsafe_allow_html=True)
+    with cm4: st.markdown(f'<div class="mcard"><div class="lbl">🚨 Alert Flag</div><div class="val" style="color:var(--red)">{n_alert}</div><div class="sub">Perlu diwaspadai</div></div>', unsafe_allow_html=True)
+    with cm5:
+        if n_sc > 0 and 'CVI' in df_screener.columns:
+            macd_s = df_screener[df_screener.get('MACD_PreCross', False) == True] if 'MACD_PreCross' in df_screener.columns else pd.DataFrame()
+            top = macd_s.sort_values('CVI', ascending=False).iloc[0] if not macd_s.empty else df_screener.sort_values('CVI', ascending=False).iloc[0]
+            macd_tag = " ⚡" if not macd_s.empty else ""
+            st.markdown(f"""<div class="mcard">
+                <div class="lbl">🥇 Top Priority{macd_tag}</div>
+                <div class="val" style="color:var(--amber);font-size:17px;">{top.get('Ticker','—')}</div>
+                <div class="sub">CVI {fmt_val(top.get('CVI','—'))} · {fmt_val(top.get('Potensial_Upsize','—'))}</div>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="mcard"><div class="lbl">Top Priority</div><div class="val">—</div></div>', unsafe_allow_html=True)
+    with cm6:
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+        if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_fire"):
+            st.cache_data.clear(); st.rerun()
 
-cm1,cm2,cm3,cm4,cm5,cm6 = st.columns([1,1,1,1,2,1.2])
-with cm1: st.markdown(f'<div class="mcard"><div class="lbl">Screener Live</div><div class="val" style="color:var(--fire)">{n_sc}</div><div class="sub">Emiten aktif</div></div>', unsafe_allow_html=True)
-with cm2: st.markdown(f'<div class="mcard"><div class="lbl">Sinyal BUY</div><div class="val" style="color:var(--green)">{n_buy}</div><div class="sub">Akumulasi terdeteksi</div></div>', unsafe_allow_html=True)
-with cm3: st.markdown(f'<div class="mcard"><div class="lbl">⚡ MACD PreCross</div><div class="val" style="color:var(--purple)">{n_macd}</div><div class="sub">Prioritas masuk</div></div>', unsafe_allow_html=True)
-with cm4: st.markdown(f'<div class="mcard"><div class="lbl">🚨 Alert Flag</div><div class="val" style="color:var(--red)">{n_alert}</div><div class="sub">Perlu diwaspadai</div></div>', unsafe_allow_html=True)
-with cm5:
-    if n_sc > 0 and 'CVI' in df_screener.columns:
-        # Prioritaskan MACD Pre-Crossover dulu
-        macd_screener = df_screener[df_screener.get('MACD_PreCross', False) == True] if 'MACD_PreCross' in df_screener.columns else pd.DataFrame()
-        top = macd_screener.sort_values('CVI', ascending=False).iloc[0] if not macd_screener.empty else df_screener.sort_values('CVI', ascending=False).iloc[0]
-        macd_tag = " ⚡" if not macd_screener.empty else ""
-        st.markdown(f"""<div class="mcard">
-            <div class="lbl">🥇 Top Priority{macd_tag}</div>
-            <div class="val" style="color:var(--amber);font-size:17px;">{top.get('Ticker','—')}</div>
-            <div class="sub">CVI {fmt_val(top.get('CVI','—'))} · {fmt_val(top.get('Potensial_Upsize','—'))}</div>
-        </div>""", unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="mcard"><div class="lbl">Top Priority</div><div class="val">—</div></div>', unsafe_allow_html=True)
-with cm6:
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    if st.button("🔄 Refresh Data", use_container_width=True):
-        st.cache_data.clear(); st.rerun()
-
+# ── Sidebar ───────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<div class="sb-logo">🐉 Dragon Fire</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sb-sect">STATUS LIVE</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sb-stat"><div class="lbl">Screener Aktif</div><div class="val" style="color:var(--fire)">{n_sc}</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sb-stat"><div class="lbl">Sinyal BUY</div><div class="val" style="color:var(--green)">{n_buy}</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sb-stat"><div class="lbl">⚡ MACD PreCross</div><div class="val" style="color:var(--purple)">{n_macd}</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sb-stat"><div class="lbl">🚨 Alert Aktif</div><div class="val" style="color:var(--red)">{n_alert}</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sb-stat"><div class="lbl">Master Database</div><div class="val">{n_all} emiten</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="sb-stat"><div class="lbl">Riwayat Tersimpan</div><div class="val">{n_hist} hari</div></div>', unsafe_allow_html=True)
+    if IS_TIGER:
+        st.markdown('<div class="sb-logo">🐯 Tiger Hunter</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sb-sect">STATUS TIGER</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">Tiger Screener</div><div class="val" style="color:var(--tiger)">{n_t_sc}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">⚡ Breakout</div><div class="val" style="color:var(--amber)">{n_t_brk}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">🚀 Strong Buy</div><div class="val" style="color:var(--green)">{n_t_sbuy}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">Master Database</div><div class="val">{n_t_all} emiten</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">Riwayat Tersimpan</div><div class="val">{n_t_hist} hari</div></div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="sb-logo">🐉 Dragon Fire</div>', unsafe_allow_html=True)
+        st.markdown('<div class="sb-sect">STATUS LIVE</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">Screener Aktif</div><div class="val" style="color:var(--fire)">{n_sc}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">Sinyal BUY</div><div class="val" style="color:var(--green)">{n_buy}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">⚡ MACD PreCross</div><div class="val" style="color:var(--purple)">{n_macd}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">🚨 Alert Aktif</div><div class="val" style="color:var(--red)">{n_alert}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">Master Database</div><div class="val">{n_all} emiten</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">Riwayat Tersimpan</div><div class="val">{n_hist} hari</div></div>', unsafe_allow_html=True)
     st.markdown("---")
-    st.caption(f"Dragon Fire v4.0 · KangTao Cari Cuan\n\n{now_str}")
+    engine_label = "Tiger Hunter v1.0" if IS_TIGER else "Dragon Fire v4.0"
+    st.caption(f"{engine_label} · KangTao Cari Cuan\n\n{now_str}")
 
 # ══════════════════════════════════════════════════════
-# 6. MAIN TABS (6 tabs)
+# 6. MAIN TABS — shared across both engines
 # ══════════════════════════════════════════════════════
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊  LIVE SCREENER",
@@ -511,9 +651,94 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 # ─────────────────────────────────────────────────────
+# ── Tiger helper functions ────────────────────────────────────────
+def tiger_status_badge(s):
+    a = str(s).upper()
+    if "BREAKOUT"    in a: return f'<span class="badge b-breakout">{s}</span>'
+    if "STRONG BUY"  in a: return f'<span class="badge b-strongbuy">{s}</span>'
+    if "ACCUMULATION"in a: return f'<span class="badge b-accum">{s}</span>'
+    if "SUPER BULL"  in a: return f'<span class="badge b-superbull">{s}</span>'
+    return f'<span class="badge b-watching">{s}</span>'
+
+def get_tiger_data_for_ticker(ticker):
+    for df_src, src in [(df_tiger_all,"Tiger Master DB"),(df_tiger_screener,"Tiger Screener")]:
+        if not df_src.empty and 'Ticker' in df_src.columns:
+            m = df_src[df_src['Ticker']==ticker]
+            if not m.empty: return m.iloc[0].to_dict(), src
+    if not df_tiger_history.empty and 'Ticker' in df_tiger_history.columns:
+        m = (df_tiger_history[df_tiger_history['Ticker']==ticker]
+             .sort_values('Tanggal_Scan',ascending=False).head(1)
+             .drop(columns=['Tanggal_Scan'],errors='ignore'))
+        if not m.empty: return m.iloc[0].to_dict(), "Tiger Histori"
+    return None, None
+
 # TAB 1 · LIVE SCREENER
 # ─────────────────────────────────────────────────────
 with tab1:
+  if IS_TIGER:
+    # ── TIGER SCREENER ─────────────────────────────────────────
+    st.markdown('<div class="slabel">🐯 Tiger Hunter — Live Screener</div>', unsafe_allow_html=True)
+    if df_tiger_screener.empty:
+        st.markdown('<div class="abox abox-warn">⚠ Belum ada data tiger_screener_live. Jalankan dragon_hunt_tiger_cloud.py terlebih dahulu.</div>', unsafe_allow_html=True)
+    else:
+        # Top picks per status
+        for status_filter, color, rank_col in [
+            ("BREAKOUT",    "var(--amber)", "Score"),
+            ("STRONG BUY",  "var(--green)", "Score"),
+            ("ACCUMULATION","var(--blue)",  "Score"),
+        ]:
+            df_group = df_tiger_screener[df_tiger_screener['Status'].str.contains(status_filter, na=False)]
+            if df_group.empty: continue
+            df_group = df_group.sort_values(rank_col, ascending=False)
+            icon = {"BREAKOUT":"⚡","STRONG BUY":"🚀","ACCUMULATION":"📦"}.get(status_filter,"")
+            st.markdown(f'<div class="slabel">{icon} {status_filter} — Top {min(3,len(df_group))} Hari Ini</div>', unsafe_allow_html=True)
+            cols_top = st.columns(min(3, len(df_group)))
+            for i, (_, r) in enumerate(df_group.head(3).iterrows()):
+                with cols_top[i]:
+                    st.markdown(f"""
+                    <div class="tiger-card">
+                      <div style="font-size:22px;font-weight:800;font-family:var(--mono)">{r.get('Ticker','—')}</div>
+                      <div style="font-size:13px;font-weight:700;color:var(--blue)">Rp {fmt_val(r.get('Harga','—'))}</div>
+                      <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.7;">
+                        Score <strong style="color:{color}">{fmt_val(r.get('Score','—'))}</strong>
+                        &nbsp;·&nbsp; AI <strong>{fmt_val(r.get('AI_Conf','—'))}</strong><br>
+                        Target <strong style="color:var(--green)">{fmt_val(r.get('Target_Price','—'))}</strong>
+                        &nbsp;·&nbsp; SL <strong style="color:var(--red)">{fmt_val(r.get('Stop_Loss','—'))}</strong>
+                      </div>
+                      {tiger_status_badge(r.get('Status',''))}
+                    </div>""", unsafe_allow_html=True)
+
+        st.write("")
+        # Filter & sort
+        tf1, tf2 = st.columns([4, 2])
+        with tf1:
+            status_opts = sorted(df_tiger_screener['Status'].dropna().unique().tolist())
+            sel_status  = st.multiselect("Filter Status", options=status_opts, default=status_opts, key="t_status")
+        with tf2:
+            t_sort = st.selectbox("Urutkan", ['Score','AI_Conf_Val','Harga'], key="t_sort")
+
+        df_td = df_tiger_screener.copy()
+        if sel_status: df_td = df_td[df_td['Status'].isin(sel_status)]
+        if t_sort in df_td.columns: df_td = df_td.sort_values(t_sort, ascending=False)
+
+        t_dcols = [c for c in ['Ticker','Harga','Kasta','Status','Score','AI_Conf',
+                                'RSI','MACD_Hist','CMF','BB_Width_Str','UD_Vol_Ratio',
+                                'Buy_Area','Target_Price','Stop_Loss','Ichimoku',
+                                'Dragon_Action','Dragon_Kesimpulan']
+                   if c in df_td.columns]
+        st.dataframe(df_td[t_dcols].reset_index(drop=True), use_container_width=True, height=420,
+            column_config={
+                "Ticker":       st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                "Harga":        st.column_config.NumberColumn("Harga", format="Rp %,.0f"),
+                "Score":        st.column_config.ProgressColumn("Score", min_value=0, max_value=145, format="%.0f"),
+                "Target_Price": st.column_config.NumberColumn("Target", format="Rp %,.0f"),
+                "Stop_Loss":    st.column_config.NumberColumn("Stop Loss", format="Rp %,.0f"),
+            })
+        st.download_button("⬇️ Download Tiger Screener (.xlsx)",
+            data=to_excel(df_td[t_dcols], "Tiger_Screener"),
+            file_name=f"Tiger_Screener_{now_jkt().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+  else:
     if df_screener.empty:
         st.markdown('<div class="abox abox-warn">⚠ Belum ada data screener_live. Jalankan dragon_fire.py terlebih dahulu.</div>', unsafe_allow_html=True)
     else:
@@ -991,6 +1216,53 @@ with tab4:
 # TAB 5 · DIAGNOSTIK TICKER
 # ─────────────────────────────────────────────────────
 with tab5:
+  if IS_TIGER:
+    # Tiger Diagnostik
+    n_t_all_diag = len(df_tiger_all)
+    st.markdown('<div class="slabel">🔍 Diagnostik Tiger — Per Emiten</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="abox abox-info">📡 Tiger Master DB: <strong>{n_t_all_diag} emiten</strong>. Ketik kode saham BEI (tanpa .JK).</div>', unsafe_allow_html=True)
+    td_ci, td_cb = st.columns([4,1])
+    with td_ci:
+        t_search = st.text_input("", placeholder="Contoh: BBCA · GDYR · KMDS ...",
+                                  label_visibility="collapsed", key="t_diag_input").strip().upper()
+    with td_cb:
+        st.write("")
+        st.button("🔍 Cari", use_container_width=True, key="t_diag_btn")
+    if t_search:
+        t_row, t_src = get_tiger_data_for_ticker(t_search)
+        if t_row:
+            st.markdown(f"""
+            <div style="display:flex;align-items:center;gap:12px;margin:16px 0 10px 0;">
+                <span style="font-size:24px;font-weight:800;font-family:var(--mono)">{t_search}</span>
+                {tiger_status_badge(t_row.get('Status',''))}
+                <span style="color:var(--text-2);font-size:12px;">{t_src}</span>
+            </div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="dg">
+              <div class="dc"><div class="k">Harga</div><div class="v" style="color:var(--blue)">Rp {fmt_val(t_row.get('Harga','—'))}</div></div>
+              <div class="dc"><div class="k">Score</div><div class="v" style="color:var(--tiger)">{fmt_val(t_row.get('Score','—'))}</div><div class="h">/145 max</div></div>
+              <div class="dc"><div class="k">AI Conf</div><div class="v">{fmt_val(t_row.get('AI_Conf','—'))}</div><div class="h">5-10 hari ke depan</div></div>
+              <div class="dc"><div class="k">RSI</div><div class="v">{fmt_val(t_row.get('RSI','—'))}</div></div>
+              <div class="dc"><div class="k">Buy Area</div><div class="v" style="font-size:13px">{fmt_val(t_row.get('Buy_Area','—'))}</div></div>
+              <div class="dc"><div class="k">Target</div><div class="v" style="color:var(--green)">Rp {fmt_val(t_row.get('Target_Price','—'))}</div><div class="h">{fmt_val(t_row.get('Target_Src',''))}</div></div>
+              <div class="dc"><div class="k">Stop Loss</div><div class="v" style="color:var(--red)">Rp {fmt_val(t_row.get('Stop_Loss','—'))}</div></div>
+              <div class="dc"><div class="k">CMF</div><div class="v">{fmt_val(t_row.get('CMF_Raw',t_row.get('CMF','—')))}</div></div>
+              <div class="dc"><div class="k">UD Vol Ratio</div><div class="v">{fmt_val(t_row.get('UD_Vol_Ratio','—'))}</div></div>
+              <div class="dc"><div class="k">BB Width</div><div class="v">{fmt_val(t_row.get('BB_Width_Str','—'))}</div></div>
+              <div class="dc"><div class="k">Ichimoku</div><div class="v" style="font-size:12px">{fmt_val(t_row.get('Ichimoku','—'))}</div></div>
+              <div class="dc"><div class="k">Kasta</div><div class="v" style="font-size:13px">{fmt_val(t_row.get('Kasta','—'))}</div></div>
+            </div>""", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class="konk">
+              <div class="kt">Dragon Cross-Check</div>
+              <div class="kv">{fmt_val(t_row.get('Dragon_Kesimpulan','—'))} &nbsp;→&nbsp; <strong>{fmt_val(t_row.get('Dragon_Action','—'))}</strong></div>
+            </div>""", unsafe_allow_html=True)
+            st.markdown('<div class="slabel">📈 Chart Candlestick · BB · Volume · MACD (90 Hari)</div>', unsafe_allow_html=True)
+            render_chart(t_search)
+        else:
+            st.markdown(f'<div class="abox abox-err">❌ <strong>{t_search}</strong> tidak ditemukan di Tiger database.</div>', unsafe_allow_html=True)
+            render_chart(t_search)
+  else:
     st.markdown('<div class="slabel">🔍 Diagnostik & Chart Per Emiten</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="abox abox-info">📡 Basis data: <strong>{n_all} emiten</strong>. Ketik kode saham BEI (tanpa .JK).</div>', unsafe_allow_html=True)
 
@@ -1065,6 +1337,46 @@ with tab5:
 # TAB 6 · HISTORI HARIAN
 # ─────────────────────────────────────────────────────
 with tab6:
+  if IS_TIGER:
+    st.markdown('<div class="slabel">📅 Arsip Histori Tiger Hunter</div>', unsafe_allow_html=True)
+    if df_tiger_history.empty or 'Tanggal_Scan' not in df_tiger_history.columns:
+        st.markdown('<div class="abox abox-info">💡 Belum ada rekam histori Tiger. Jalankan dragon_hunt_tiger_cloud.py terlebih dahulu.</div>', unsafe_allow_html=True)
+    else:
+        t_avail = sorted(df_tiger_history['Tanggal_Scan'].unique().tolist(), reverse=True)
+        th1, th2 = st.columns([3,2])
+        with th1:
+            t_sel_date = st.selectbox("📅 Pilih Tanggal Tiger:", options=t_avail, key="tiger_hist_date")
+        df_thd = (df_tiger_history[df_tiger_history['Tanggal_Scan']==t_sel_date]
+                  .drop(columns=['Tanggal_Scan'],errors='ignore').reset_index(drop=True))
+        with th2:
+            st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+            st.download_button(f"⬇️ Download {t_sel_date} (.xlsx)",
+                data=to_excel(df_thd, f"Tiger_{t_sel_date}"),
+                file_name=f"Tiger_Histori_{t_sel_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True)
+        n_th_brk  = df_thd['Status'].str.contains("BREAKOUT",  na=False).sum() if 'Status' in df_thd.columns else 0
+        n_th_sbuy = df_thd['Status'].str.contains("STRONG BUY",na=False).sum() if 'Status' in df_thd.columns else 0
+        n_th_acc  = df_thd['Status'].str.contains("ACCUMULATION",na=False).sum() if 'Status' in df_thd.columns else 0
+        h1,h2,h3,h4 = st.columns(4)
+        h1.metric("Total Emiten", len(df_thd))
+        h2.metric("⚡ Breakout", n_th_brk)
+        h3.metric("🚀 Strong Buy", n_th_sbuy)
+        h4.metric("📦 Accumulation", n_th_acc)
+        t_srch = st.text_input("🔍 Cari Ticker:", placeholder="BBCA, GDYR ...", key="tiger_hist_search").strip().upper()
+        if t_srch: df_thd = df_thd[df_thd['Ticker']==t_srch].reset_index(drop=True)
+        th_cols = [c for c in ['Ticker','Harga','Kasta','Status','Score','AI_Conf',
+                                'RSI','CMF','BB_Width_Str','UD_Vol_Ratio','Buy_Area',
+                                'Target_Price','Stop_Loss','Dragon_Action'] if c in df_thd.columns]
+        st.dataframe(df_thd[th_cols], use_container_width=True, height=420,
+            column_config={
+                "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                "Harga":  st.column_config.NumberColumn("Harga", format="Rp %,.0f"),
+                "Score":  st.column_config.ProgressColumn("Score", min_value=0, max_value=145, format="%.0f"),
+                "Target_Price": st.column_config.NumberColumn("Target", format="Rp %,.0f"),
+                "Stop_Loss":    st.column_config.NumberColumn("Stop Loss", format="Rp %,.0f"),
+            })
+  else:
     st.markdown('<div class="slabel">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
     if df_history.empty or 'Tanggal_Scan' not in df_history.columns:
         st.markdown('<div class="abox abox-info">💡 Belum ada rekam histori.</div>', unsafe_allow_html=True)
