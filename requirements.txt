@@ -9,3 +9,5 @@ mplfinance
 openpyxl
 plotly
 pytz
+lightgbm
+xgboost
