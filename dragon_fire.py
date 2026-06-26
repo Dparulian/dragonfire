@@ -557,13 +557,61 @@ if not dragon_candidates.empty:
         try:
             df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
+
+            # ── screener_history: schema-safe append ──────────────
+            # FIX: if_exists='append' gagal diam-diam ketika skema tabel di Supabase
+            # tidak cocok dengan DataFrame (misal: kolom MACD/Alert_Flag belum ada
+            # di tabel lama yang dibuat sebelum kolom ini ditambahkan).
+            # Solusi: cek skema tabel dulu, jika berbeda hapus & buat ulang,
+            # lalu delete baris hari ini (idempotent) sebelum insert baru.
             df_histori = df_all_export.copy()
             df_histori['Tanggal_Scan'] = today_wib_str()
-            df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
+
+            with db_engine.connect() as conn:
+                # 1. Cek apakah tabel sudah ada
+                tbl_exists = conn.execute(text(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_name = 'screener_history')"
+                )).scalar()
+
+                if tbl_exists:
+                    # 2. Cek apakah kolom di tabel cocok dengan DataFrame
+                    existing_cols = set(row[0] for row in conn.execute(text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'screener_history'"
+                    )).fetchall())
+                    needed_cols   = set(c.lower() for c in df_histori.columns)
+                    missing_cols  = needed_cols - existing_cols
+
+                    if missing_cols:
+                        # Skema lama tidak cocok: hapus tabel agar dibuat ulang
+                        # (data lama hilang, tapi ini satu kali saja saat migrasi)
+                        print(f"⚠️  screener_history: kolom hilang {missing_cols} — "
+                              f"tabel direkonstruksi ulang (migrasi skema).")
+                        conn.execute(text('DROP TABLE IF EXISTS "screener_history"'))
+                        conn.commit()
+
+                    else:
+                        # Skema cocok: hapus baris hari ini dulu (idempotent)
+                        # agar tidak ada duplikat jika workflow dijalankan 2x
+                        tanggal_hari_ini = today_wib_str()
+                        deleted = conn.execute(text(
+                            "DELETE FROM screener_history "
+                            "WHERE \"Tanggal_Scan\" = :tgl"
+                        ), {"tgl": tanggal_hari_ini}).rowcount
+                        conn.commit()
+                        if deleted > 0:
+                            print(f"🔄 screener_history: {deleted} baris lama "
+                                  f"{tanggal_hari_ini} dihapus sebelum insert baru.")
+
+            # 3. Insert (tabel baru jika baru saja di-drop, atau append bersih)
+            df_histori.to_sql('screener_history', db_engine,
+                              if_exists='append', index=False)
+
             print(f"\n🚀 DATABASE SUCCESS:")
             print(f"   → screener_live   : {len(df_excel_simple)} baris")
             print(f"   → all_stocks_live : {len(df_all_export)} baris")
-            print(f"   → screener_history: +{len(df_histori)} baris")
+            print(f"   → screener_history: +{len(df_histori)} baris ({today_wib_str()})")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
 
@@ -594,8 +642,29 @@ else:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             df_histori = df_all_export.copy()
             df_histori['Tanggal_Scan'] = today_wib_str()
+
+            with db_engine.connect() as conn:
+                tbl_exists = conn.execute(text(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_name = 'screener_history')"
+                )).scalar()
+                if tbl_exists:
+                    existing_cols = set(row[0] for row in conn.execute(text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'screener_history'"
+                    )).fetchall())
+                    needed_cols = set(c.lower() for c in df_histori.columns)
+                    if needed_cols - existing_cols:
+                        conn.execute(text('DROP TABLE IF EXISTS "screener_history"'))
+                        conn.commit()
+                    else:
+                        conn.execute(text(
+                            "DELETE FROM screener_history WHERE \"Tanggal_Scan\" = :tgl"
+                        ), {"tgl": today_wib_str()})
+                        conn.commit()
+
             df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
-            print("🚀 Master DB tetap diupdate.")
+            print(f"🚀 Master DB diupdate. screener_history: +{len(df_histori)} baris ({today_wib_str()})")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
 
