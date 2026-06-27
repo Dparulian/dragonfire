@@ -44,6 +44,39 @@ MIN_UD_RATIO =  1.20
 # diperdagangkan seperti BKDP (Vol_Ratio=0 → BB_Width=0 → CVI=tak terhingga)
 MIN_VOL_RATIO = 0.01
 
+# ── IMPROVEMENT THRESHOLDS (berdasarkan backtest beta analysis) ───
+# A1: Threshold Accum Buy lebih ketat → kurangi false signal
+#     Justifikasi: backtest Accum Buy beta 0.97 dan hit rate 75.8%;
+#     dengan threshold lebih ketat sinyal yang tersisa lebih bersih.
+ACCUM_CMF_MIN        = 0.08    # naik dari 0.05 → hanya akumulasi benar-benar kuat
+ACCUM_UD_VOL_MIN     = 1.80    # naik dari 1.50 → pembeli dominan lebih konsisten
+ACCUM_EST_DAYS_MAX   = 32.0    # turun dari 36  → breakout lebih dekat lebih bagus
+
+# A2: Box Position filter — cegah entry terlalu dekat resistance
+#     Justifikasi: pola MKAP (breakout sudah berjalan, entry terlambat)
+ACCUM_BOX_POS_MAX    = 0.80    # Close tidak boleh di atas 80% dari range boks
+
+# A3: Vol Velocity minimum — konfirmasi volume mulai warming up
+#     Justifikasi: squeeze pasif tanpa dorongan volume sering tidak breakout
+ACCUM_VOL_VELOCITY_MIN = 0.80  # VMA5 minimal 80% dari VMA20
+
+# A4: Fast Trade dihapus dari priority screener
+#     Justifikasi: backtest avg return @exit hanya +1.08% — tidak efisien
+#     Fast Trade masih dihitung tapi tidak masuk df_excel_simple
+
+# B1: Profit Target Dinamis — berdasarkan Pred_Upsize bukan fixed +10%
+#     Formula: max(10%, Pred_Upsize * PROFIT_TARGET_RATIO)
+PROFIT_TARGET_RATIO  = 0.75   # 75% dari prediksi ML (konservatif tapi realistis)
+
+# B2: CVI Tier breakpoints
+CVI_TIER_HIGH        = 0.15   # CVI di atas ini = "Tinggi"
+CVI_TIER_MID         = 0.07   # CVI di atas ini = "Sedang", di bawah = "Rendah"
+
+# B3: Confidence Score — bobot per indikator
+# Skor 1–5 berdasarkan konfluensi: CMF kuat + UD Vol tinggi + BB sangat
+# sempit + MACD Pre-Cross + Volume warming up
+# (dihitung di compute_confidence_score)
+
 # Threshold MACD Pre-Crossover: MACD fast line masih negatif tapi
 # sudah dalam jarak <= MACD_PROXIMITY_PCT dari zero line
 MACD_PROXIMITY_PCT = 0.005   # 0.5% dari harga = "sangat dekat zero"
@@ -160,6 +193,30 @@ def build_features(df, ticker_name):
     gain   = delta.where(delta > 0, 0).rolling(14).mean()
     loss   = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + gain / loss.replace(0, 1e-9)))
+
+    # ── ADX 14 (Average Directional Index) ───────────────────────
+    # Mengukur kekuatan trend — ADX > 25 = trend kuat, < 20 = sideways/lemah
+    # Dipakai sebagai konfirmasi di Confidence Score (B3)
+    high_s   = df['High']
+    low_s    = df['Low']
+    close_s  = df['Close']
+    plus_dm  = high_s.diff().clip(lower=0)
+    minus_dm = (-low_s.diff()).clip(lower=0)
+    # Jika kenaikan high lebih besar dari penurunan low, pakai +DM, else 0
+    plus_dm  = plus_dm.where(plus_dm > minus_dm, 0.0)
+    minus_dm = minus_dm.where(minus_dm > plus_dm, 0.0)
+    # True Range
+    tr1 = high_s - low_s
+    tr2 = (high_s - close_s.shift()).abs()
+    tr3 = (low_s  - close_s.shift()).abs()
+    tr  = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr14    = tr.rolling(14).mean().replace(0, 1e-9)
+    plus_di  = 100 * plus_dm.rolling(14).mean() / atr14
+    minus_di = 100 * minus_dm.rolling(14).mean() / atr14
+    dx       = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, 1e-9))
+    df['ADX']      = dx.rolling(14).mean()
+    df['Plus_DI']  = plus_di
+    df['Minus_DI'] = minus_di
 
     # ── NEW: CMF 3-day change (untuk alert distribusi) ────────────
     df['CMF_3d_Change'] = df['CMF'].diff(periods=3)
@@ -363,6 +420,73 @@ def apply_historical_feedback_loop(df_train, folder_output, dict_df_full):
     return df_train
 
 
+
+# ── B2: CVI TIER ──────────────────────────────────────────────────
+def compute_cvi_tier(cvi_val):
+    """
+    Kategorisasi CVI menjadi 3 tier untuk alokasi modal.
+    Tinggi = prioritas alokasi besar.
+    Sedang = alokasi normal.
+    Rendah = hati-hati, posisi kecil saja.
+    """
+    try:
+        v = float(cvi_val)
+        if v >= CVI_TIER_HIGH:  return 'Tinggi'
+        if v >= CVI_TIER_MID:   return 'Sedang'
+        return 'Rendah'
+    except:
+        return 'Rendah'
+
+
+# ── B3: CONFIDENCE SCORE ──────────────────────────────────────────
+def compute_confidence_score(row):
+    """
+    Skor kepercayaan 1–5 berdasarkan konfluensi indikator.
+    Setiap kondisi terpenuhi menambah 1 poin.
+
+    Kriteria (masing-masing +1):
+    1. CMF kuat   : CMF >= 0.10 (akumulasi benar-benar kuat)
+    2. UD Vol kuat: UD_Vol_Ratio >= 2.0 (pembeli dominan jelas)
+    3. BB sangat sempit: BB_Width <= 0.08 (energi sangat terkompres)
+    4. Volume warming: Vol_Velocity >= 0.90 (volume mulai meningkat)
+    5. MACD Pre-Cross atau ADX kuat: MACD Pre-Cross aktif ATAU ADX >= 25
+    """
+    try:
+        score = 0
+        if float(row.get('CMF',       0))   >= 0.10:   score += 1
+        if float(row.get('UD_Vol_Ratio', 0)) >= 2.00:   score += 1
+        if float(row.get('BB_Width',   1))  <= 0.08:   score += 1
+        if float(row.get('Vol_Velocity', 0)) >= 0.90:   score += 1
+        # Kriteria 5: MACD Pre-Cross ATAU ADX kuat
+        macd_pre = bool(row.get('MACD_PreCross', False))
+        adx_val  = float(row.get('ADX', 0))
+        if macd_pre or adx_val >= 25:                   score += 1
+        return score
+    except:
+        return 0
+
+
+# ── B1: PROFIT TARGET DINAMIS ─────────────────────────────────────
+def compute_profit_target(row):
+    """
+    Target profit yang lebih realistis dari fixed +10%.
+    Formula: max(10%, Pred_Upsize * PROFIT_TARGET_RATIO)
+
+    Justifikasi dari backtest:
+    - Accum Buy median actual = +32.2%, prediksi = +26.3%
+    - Menggunakan 75% dari prediksi (PROFIT_TARGET_RATIO=0.75) memberikan
+      target yang konservatif tapi jauh lebih berguna dari fixed +10%
+    - Untuk Fast Trade (ML overestimate +3.7pp), tetap cap di minimal 10%
+    """
+    try:
+        close       = float(row.get('Close', 0))
+        pred_upsize = float(row.get('Expected_Upsize', 0.10))  # fraksi, misal 0.26
+        dynamic_pct = max(0.10, pred_upsize * PROFIT_TARGET_RATIO)
+        return int(round(close * (1 + dynamic_pct)))
+    except:
+        return 0
+
+
 def generate_kesimpulan(row):
     status  = ""
     status += "Volum Kering. "  if row['Vol_Ratio'] < 0.5  else \
@@ -373,28 +497,60 @@ def generate_kesimpulan(row):
 
 
 def rekomendasi_action_mendalam(row):
+    """
+    Labeling rekomendasi dengan threshold yang diperketat berdasarkan backtest.
+
+    Perubahan dari versi sebelumnya (justifikasi dari backtest 2024-2026):
+    A1: CMF > 0.05→0.08, UD_Vol >= 1.5→1.8, Est <= 36→32 hari
+    A2: Box_Position <= 0.80 (tidak terlalu dekat resistance)
+    A3: Vol_Velocity >= 0.80 (volume mulai warming up)
+    A4: Fast Trade tidak masuk label priority — avg return @exit hanya +1.08%
+    """
     est_days = row['Expected_Days']
 
     if est_days > 55.0:
-        return "HINDARI (DISTRIBUSI / TRAP TERDETEKSI)"
+        return 'HINDARI (DISTRIBUSI / TRAP TERDETEKSI)'
 
-    if row['BB_Width'] <= 0.15 and row['CMF'] > 0.05 and row['UD_Vol_Ratio'] >= 1.5:
-        if est_days <= 36.0:
-            base = "ACCUMULATION BUY (NAGA TERBAIK)"
+    bb    = row['BB_Width']
+    cmf   = row['CMF']
+    ud    = row['UD_Vol_Ratio']
+    vr    = row['Vol_Ratio']
+    vv    = float(row.get('Vol_Velocity', 0))
+    bp    = float(row.get('Box_Position', 1))
+
+    # ── ACCUMULATION BUY (kriteria paling ketat — A1, A2, A3) ────
+    # Semua threshold dinaikkan berdasarkan hasil backtest
+    accum_base = (
+        bb  <= BB_WIDTH_MAX   and
+        cmf >= ACCUM_CMF_MIN  and          # A1: 0.08 (naik dari 0.05)
+        ud  >= ACCUM_UD_VOL_MIN and        # A1: 1.80 (naik dari 1.50)
+        bp  <= ACCUM_BOX_POS_MAX and       # A2: tidak > 80% range boks
+        vv  >= ACCUM_VOL_VELOCITY_MIN      # A3: volume mulai warming up
+    )
+    if accum_base:
+        if est_days <= ACCUM_EST_DAYS_MAX:  # A1: 32 hari (turun dari 36)
+            base = 'ACCUMULATION BUY (NAGA TERBAIK)'
         elif est_days <= 46.0:
-            base = "STEALTH BUY (NYICIL SILUMAN)"
+            base = 'STEALTH BUY (NYICIL SILUMAN)'
         else:
-            base = "PANTAU (NAGA TIDUR PULAS)"
-    elif row['BB_Width'] <= 0.15 and -0.05 <= row['CMF'] <= 0.05 and row['UD_Vol_Ratio'] >= 2.0:
-        base = "STEALTH BUY (NYICIL SILUMAN)"
-    elif row['BB_Width'] > 0.20 and row['Vol_Ratio'] >= 2.0 and row['CMF'] > 0.10:
-        base = "FAST TRADE / BREAKOUT SCALPING"
-    elif row['Vol_Ratio'] > 1.5 and row['CMF'] < -0.10:
-        base = "HINDARI (BANDAR DISTRIBUSI / DUMP)"
-    else:
-        base = "WAIT & SEE (NANTI DULU)"
+            base = 'PANTAU (NAGA TIDUR PULAS)'
 
-    # Tambahkan label MACD Pre-Crossover jika terdeteksi
+    # ── STEALTH BUY (kriteria lebih longgar — akumulasi siluman) ─
+    elif bb <= BB_WIDTH_MAX and -0.05 <= cmf <= 0.05 and ud >= 2.0:
+        base = 'STEALTH BUY (NYICIL SILUMAN)'
+
+    # ── FAST TRADE — A4: tetap dihitung tapi BUKAN priority ──────
+    # Label tetap ada agar bisa dilihat di diagnostik ticker,
+    # tapi tidak masuk df_excel_simple (priority screener)
+    elif bb > 0.20 and vr >= 2.0 and cmf > 0.10:
+        base = 'FAST TRADE / BREAKOUT SCALPING'
+
+    elif vr > 1.5 and cmf < -0.10:
+        base = 'HINDARI (BANDAR DISTRIBUSI / DUMP)'
+
+    else:
+        base = 'WAIT & SEE (NANTI DULU)'
+
     return build_macd_label(base, detect_macd_pre_crossover(row))
 
 
@@ -508,7 +664,7 @@ if 'Ticker' in df_train_global.columns and 'Date' in df_train_global.columns:
 features = [
     'BB_Width', 'Vol_Ratio', 'Dist_to_MA20', 'Returns',
     'CMF', 'UD_Vol_Ratio', 'CMF_Slope', 'Vol_Velocity',
-    'BB_Width_Delta', 'Box_Position'
+    'BB_Width_Delta', 'Box_Position', 'ADX', 'Vol_Velocity'
 ]
 df_train_global.dropna(subset=features + ['Target_Days', 'Target_Upsize'], inplace=True)
 
@@ -588,6 +744,27 @@ df_latest_global['MACD_raw']               = df_latest_global['MACD'].round(4)
 df_latest_global['MACD_Slope_raw']         = df_latest_global['MACD_Slope'].round(4)
 df_latest_global['RSI_raw']                = df_latest_global['RSI'].round(1) if 'RSI' in df_latest_global.columns else 0.0
 
+# ── B1: Profit Target Dinamis ─────────────────────────────────────
+df_latest_global['Profit_Target'] = df_latest_global.apply(compute_profit_target, axis=1)
+print(f"   💰 Profit Target Dinamis dihitung (rata-rata: Rp "
+      f"{int(df_latest_global['Profit_Target'].mean()):,})")
+
+# ── B2: CVI Tier ──────────────────────────────────────────────────
+df_latest_global['CVI_Tier'] = df_latest_global['CVI_raw'].apply(compute_cvi_tier)
+n_high = (df_latest_global['CVI_Tier'] == 'Tinggi').sum()
+n_mid  = (df_latest_global['CVI_Tier'] == 'Sedang').sum()
+print(f"   📊 CVI Tier — Tinggi: {n_high} | Sedang: {n_mid} | "
+      f"Rendah: {len(df_latest_global)-n_high-n_mid}")
+
+# ── B3: Confidence Score ──────────────────────────────────────────
+# Perlu MACD_PreCross dan ADX sudah ada di df_latest_global
+df_latest_global['Conf_Score'] = df_latest_global.apply(
+    compute_confidence_score, axis=1
+)
+n_conf5 = (df_latest_global['Conf_Score'] == 5).sum()
+n_conf4 = (df_latest_global['Conf_Score'] == 4).sum()
+print(f"   ⭐ Confidence Score — Skor 5: {n_conf5} | Skor 4: {n_conf4} emiten")
+
 cols_final = [
     'Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str',
     'Vol_Ratio', 'Vol_Velocity', 'CMF', 'UD_Vol_Ratio',
@@ -595,6 +772,11 @@ cols_final = [
     'MACD', 'MACD_Slope', 'MACD_PreCross',
     'Alert_Flag', 'Analisis_Kesimpulan', 'Rekomendasi_Action',
     'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
+    # ── B1/B2/B3 ─────────────────────────────────────────────────
+    'Profit_Target',    # B1: target profit dinamis (Rp)
+    'CVI_Tier',         # B2: 'Tinggi' / 'Sedang' / 'Rendah'
+    'Conf_Score',       # B3: skor 1–5 konfluensi indikator
+    'ADX',              # kekuatan trend (> 25 = trend kuat)
 ]
 
 # Master semua emiten
@@ -607,6 +789,7 @@ df_all_export = df_latest_global[[
     'CVI_raw', 'MACD_raw', 'MACD_Slope_raw', 'MACD_PreCross',
     'Alert_Flag', 'Analisis_Kesimpulan_raw', 'Rekomendasi_Action_raw',
     'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
+    'Profit_Target', 'CVI_Tier', 'Conf_Score', 'ADX',
 ]].copy()
 df_all_export.columns = cols_final
 
@@ -652,23 +835,55 @@ if not dragon_candidates.empty:
     dragon_candidates['MACD']       = dragon_candidates['MACD'].round(4)
     dragon_candidates['MACD_Slope'] = dragon_candidates['MACD_Slope'].round(4)
 
-    # Sort: MACD Pre-Crossover diprioritaskan dulu, lalu CVI tertinggi
-    dragon_candidates['_sort_macd'] = dragon_candidates['MACD_PreCross'].astype(int)
-    df_excel_simple = dragon_candidates.sort_values(
-        ['_sort_macd', 'CVI'], ascending=[False, False]
+    # ── B1/B2/B3: Hitung kolom baru untuk dragon_candidates ──────
+    dragon_candidates['Profit_Target'] = dragon_candidates.apply(
+        compute_profit_target, axis=1
+    )
+    dragon_candidates['CVI_Tier']   = dragon_candidates['CVI'].apply(compute_cvi_tier)
+    dragon_candidates['Conf_Score'] = dragon_candidates.apply(
+        compute_confidence_score, axis=1
+    )
+    dragon_candidates['ADX'] = dragon_candidates['ADX'].round(1) \
+        if 'ADX' in dragon_candidates.columns else 0.0
+
+    # ── A4: Exclude Fast Trade dari priority screener ─────────────
+    # Fast Trade masih ada di all_stocks_live (Master DB) untuk
+    # bisa dicek via Diagnostik Ticker, tapi tidak masuk screener utama
+    # Justifikasi backtest: avg return @exit hanya +1.08% (tidak efisien)
+    df_priority = dragon_candidates[
+        ~dragon_candidates['Rekomendasi_Action'].str.contains(
+            'FAST TRADE', na=False
+        )
+    ].copy()
+
+    # Sort: MACD Pre-Crossover → Conf_Score → CVI tertinggi
+    df_priority['_sort_macd'] = df_priority['MACD_PreCross'].astype(int)
+    df_excel_simple = df_priority.sort_values(
+        ['_sort_macd', 'Conf_Score', 'CVI'], ascending=[False, False, False]
     )[cols_final].copy()
 
-    # Cetak ke terminal dengan highlight MACD
-    print("\n" + "="*210)
-    print("🐉 THE SLEEPING DRAGON — DUAL-BRAIN + CVI + MACD PRE-CROSSOVER PRIORITY SORT")
-    print("="*210)
+    n_fast = len(dragon_candidates) - len(df_priority)
+    print(f"   ⚡ Fast Trade dikeluarkan dari priority: {n_fast} sinyal")
+    print(f"   📋 Priority screener tersisa: {len(df_excel_simple)} sinyal")
+
+    # Cetak ke terminal dengan highlight MACD + Conf Score
+    print('\n' + '='*210)
+    print('🐉 THE SLEEPING DRAGON — DUAL-BRAIN + CVI + CONF SCORE + MACD PRE-CROSS')
+    print('='*210)
     n_macd_screen = df_excel_simple['MACD_PreCross'].sum()
     if n_macd_screen > 0:
         print(f"⚡ {n_macd_screen} saham dengan MACD Pre-Crossover (diprioritaskan di atas):")
         macd_tickers = df_excel_simple[df_excel_simple['MACD_PreCross'] == True]['Ticker'].tolist()
         print(f"   {macd_tickers}")
-    print(df_excel_simple[['Ticker','Close','CVI','MACD','MACD_PreCross','Alert_Flag',
-                            'Hari_Ke_Breakout','Potensial_Upsize','Rekomendasi_Action']].to_string(index=False))
+    n_conf5 = (df_excel_simple['Conf_Score'] == 5).sum()
+    if n_conf5 > 0:
+        print(f"⭐ {n_conf5} saham Confidence Score 5/5 (konfluensi tertinggi):")
+        c5_tickers = df_excel_simple[df_excel_simple['Conf_Score'] == 5]['Ticker'].tolist()
+        print(f"   {c5_tickers}")
+    print(df_excel_simple[['Ticker','Close','CVI','CVI_Tier','Conf_Score',
+                            'Profit_Target','MACD_PreCross','Alert_Flag',
+                            'Hari_Ke_Breakout','Potensial_Upsize',
+                            'Rekomendasi_Action']].to_string(index=False))
 
     # ── SIMPAN KE CLOUD DATABASE ──────────────────────────────────
     if IS_CLOUD:
