@@ -176,22 +176,62 @@ DISPLAY_MAP = {
     'macd':'MACD','macd_slope':'MACD_Slope','macd_precross':'MACD_PreCross',
     'alert_flag':'Alert_Flag',
     'analisis_kesimpulan':'Analisis_Kesimpulan','rekomendasi_action':'Rekomendasi_Action',
-    'tanggal_scan':'Tanggal_Scan'
+    'tanggal_scan':'Tanggal_Scan',
+    # ── kolom baru dari improvements B1/B2/B3 ────────────────────
+    'profit_target':'Profit_Target','cvi_tier':'CVI_Tier','conf_score':'Conf_Score',
+    'adx':'ADX',
+    # ── kolom reversal ────────────────────────────────────────────
+    'is_reversal':'Is_Reversal','rev_score':'Rev_Score',
+    'rev_drawdown':'Rev_Drawdown','rev_rsi':'Rev_RSI',
 }
 
 def normalize_columns(df):
+    """
+    Normalisasi kolom DataFrame dari Supabase ke format yang diharapkan app.
+    Robust terhadap: MultiIndex columns, kolom duplikat, nama berbeda case,
+    dan kolom yang hilang.
+    """
     if df is None or df.empty: return pd.DataFrame()
     df = df.copy()
-    df.columns = [c.lower().strip() for c in df.columns]
+
+    # Flatten MultiIndex jika ada (kadang terjadi dari pandas read_sql)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = ['_'.join(str(c) for c in col).strip('_')
+                      for col in df.columns]
+
+    # Lowercase + strip semua nama kolom
+    df.columns = [str(c).lower().strip() for c in df.columns]
+
+    # Hapus kolom duplikat (ambil yang pertama)
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+
+    # Rename ke format proper case
     df = df.rename(columns=DISPLAY_MAP)
+
+    # Pastikan Ticker ada — cek berbagai kemungkinan nama kolom
+    if 'Ticker' not in df.columns:
+        for alt in ['ticker', 'TICKER', 'kode', 'symbol', 'Symbol']:
+            if alt in df.columns:
+                df = df.rename(columns={alt: 'Ticker'})
+                break
+
+    # Bersihkan nilai
     if 'Ticker' in df.columns:
         df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
     if 'Close' in df.columns:
         df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
     if 'CVI' in df.columns:
         df['CVI'] = pd.to_numeric(df['CVI'], errors='coerce')
+    if 'Conf_Score' in df.columns:
+        df['Conf_Score'] = pd.to_numeric(df['Conf_Score'], errors='coerce').fillna(0).astype(int)
+    if 'Profit_Target' in df.columns:
+        df['Profit_Target'] = pd.to_numeric(df['Profit_Target'], errors='coerce').fillna(0).astype(int)
+    if 'ADX' in df.columns:
+        df['ADX'] = pd.to_numeric(df['ADX'], errors='coerce').fillna(0)
     if 'MACD_PreCross' in df.columns:
         df['MACD_PreCross'] = df['MACD_PreCross'].astype(str).str.lower().isin(['true','1','yes'])
+    if 'Is_Reversal' in df.columns:
+        df['Is_Reversal'] = df['Is_Reversal'].astype(str).str.lower().isin(['true','1','yes'])
     if 'Alert_Flag' not in df.columns:
         df['Alert_Flag'] = ''
     df['Alert_Flag'] = df['Alert_Flag'].fillna('')
