@@ -378,6 +378,9 @@ def normalize_reversal(df):
         'vol_ratio':'Vol_Ratio','cmf':'CMF','ud_vol_ratio':'UD_Vol_Ratio',
         'macd':'MACD','macd_slope':'MACD_Slope',
         'rev_score':'Rev_Score','rev_drawdown':'Rev_Drawdown','rev_rsi':'Rev_RSI',
+        'rev_priority':'Rev_Priority','rev_tier':'Rev_Tier',
+        'rev_stochrsi':'Rev_StochRSI','rev_divergence':'Rev_Divergence',
+        'rev_volconfirm':'Rev_VolConfirm','rev_adx_weak':'Rev_ADX_Weak',
         'support':'Support','resistance':'Resistance',
     }
     df = df.rename(columns=rev_map)
@@ -385,6 +388,12 @@ def normalize_reversal(df):
         df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
     if 'Close' in df.columns:
         df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+    for col in ['Rev_Score','Rev_Priority','Rev_Drawdown','Rev_RSI','Rev_StochRSI']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    for col in ['Rev_Divergence','Rev_VolConfirm','Rev_ADX_Weak']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.lower().isin(['true','1','yes'])
     return df
 
 df_reversal = normalize_reversal(fetch_cloud_data('reversal_live'))
@@ -422,9 +431,19 @@ def fmt_price(v):
     try: return f"Rp {float(v):,.0f}"
     except: return str(v) if v else "—"
 
-def fmt_val(v):
-    if v is None or (isinstance(v, float) and np.isnan(v)): return "—"
-    return str(v)
+def fmt_val(v, decimals=2):
+    """Format nilai numerik — maksimal 2 angka di belakang koma."""
+    if v is None: return "—"
+    if isinstance(v, float) and np.isnan(v): return "—"
+    if isinstance(v, bool): return str(v)
+    try:
+        f = float(v)
+        if f == int(f) and abs(f) < 1e9:
+            return str(int(f))          # bilangan bulat: tanpa desimal
+        return f"{f:.{decimals}f}"      # float: maks 2 desimal
+    except:
+        s = str(v)
+        return s if s else "—"
 
 def to_excel(df, sheet="Data"):
     buf = io.BytesIO()
@@ -725,7 +744,7 @@ with tab1:
           column_config={
               "Ticker":         st.column_config.TextColumn("Ticker", width=70, pinned=True),
               "Close":          st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-              "CVI":            st.column_config.NumberColumn("CVI", format="%.3f"),
+              "CVI":            st.column_config.NumberColumn("CVI", format="%.2f"),
               "CVI_Tier":       st.column_config.TextColumn("CVI Tier", width=80),
               "Conf_Score":     st.column_config.ProgressColumn("⭐ Conf", min_value=0, max_value=5, format="%.0f"),
               "Profit_Target":  st.column_config.NumberColumn("Target Profit", format="Rp %,.0f"),
@@ -745,55 +764,104 @@ with tab1:
       if df_reversal.empty:
           st.markdown('<div class="abox abox-info">💡 Belum ada data reversal_live. Jalankan dragon_fire.py terbaru untuk mengaktifkan fitur ini.</div>', unsafe_allow_html=True)
       else:
-          st.markdown('<div class="abox abox-warn">🔄 Saham-saham berikut <strong>tidak lolos screener utama</strong> (BB Width terlalu lebar = sudah dalam koreksi besar), namun menunjukkan sinyal teknikal pembalikan: RSI oversold, CMF mulai membalik, MACD histogram divergence bullish, dan volume pembeli kembali aktif. Gunakan sebagai watchlist reversal — entry <strong>hanya setelah ada konfirmasi candle hijau kuat + volume di atas rata-rata.</strong></div>', unsafe_allow_html=True)
+          st.markdown('<div class="abox abox-warn">🔄 Saham-saham berikut <strong>tidak lolos screener utama</strong> (BB Width lebar = sudah dalam koreksi), namun menunjukkan sinyal pembalikan teknikal. Entry <strong>hanya setelah konfirmasi candle hijau kuat + volume di atas rata-rata.</strong> Urutan berdasarkan <strong>Priority Score</strong> (makin tinggi = makin prioritas).</div>', unsafe_allow_html=True)
 
-          # Sort by Rev_Score desc
-          df_rev_show = df_reversal.sort_values('Rev_Score', ascending=False) if 'Rev_Score' in df_reversal.columns else df_reversal
+          # ── Sort by Priority Score ──────────────────────────────
+          sort_col = 'Rev_Priority' if 'Rev_Priority' in df_reversal.columns else 'Rev_Score'
+          df_rev_show = df_reversal.sort_values(sort_col, ascending=False).reset_index(drop=True)
 
-          # Top 3 reversal cards
+          # ── Tier filter tabs ────────────────────────────────────
+          tier_counts = {}
+          if 'Rev_Tier' in df_rev_show.columns:
+              tier_counts = df_rev_show['Rev_Tier'].value_counts().to_dict()
+
+          n_strong = tier_counts.get('STRONG REVERSAL', 0)
+          n_watch  = tier_counts.get('REVERSAL WATCH', 0)
+          n_pantau = tier_counts.get('PANTAU REVERSAL', 0)
+
+          # Tier header strip
+          st.markdown(f"""
+          <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+            <div style="background:rgba(0,200,83,.12);border:1px solid rgba(0,200,83,.3);
+                border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--green)">
+              🟢 STRONG REVERSAL: {n_strong}
+            </div>
+            <div style="background:rgba(255,171,0,.12);border:1px solid rgba(255,171,0,.3);
+                border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--amber)">
+              🟡 REVERSAL WATCH: {n_watch}
+            </div>
+            <div style="background:rgba(96,125,139,.12);border:1px solid rgba(96,125,139,.3);
+                border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--muted)">
+              ⚪ PANTAU: {n_pantau}
+            </div>
+          </div>""", unsafe_allow_html=True)
+
+          # ── Top 3 priority cards ────────────────────────────────
           rev_top = df_rev_show.head(3)
           if len(rev_top) > 0:
               rev_cols_card = st.columns(min(3, len(rev_top)))
               for i, (_, r) in enumerate(rev_top.iterrows()):
                   with rev_cols_card[i]:
-                      drw = fmt_val(r.get('Rev_Drawdown', '—'))
-                      rsi = fmt_val(r.get('Rev_RSI', '—'))
-                      scr = fmt_val(r.get('Rev_Score', '—'))
+                      tier    = str(r.get('Rev_Tier', 'REVERSAL WATCH'))
+                      t_color = 'var(--green)' if 'STRONG' in tier else \
+                                ('var(--amber)' if 'WATCH' in tier else 'var(--muted)')
+                      t_icon  = '🟢' if 'STRONG' in tier else ('🟡' if 'WATCH' in tier else '⚪')
+                      drw     = fmt_val(r.get('Rev_Drawdown', '—'))
+                      rsi     = fmt_val(r.get('Rev_RSI', '—'))
+                      scr     = int(r.get('Rev_Score', 0) or 0)
+                      prio    = fmt_val(r.get('Rev_Priority', '—'))
+                      div_ok  = bool(r.get('Rev_Divergence', False))
+                      vol_ok  = bool(r.get('Rev_VolConfirm', False))
                       st.markdown(f"""
-                      <div style="background:var(--bg-card);border:1px solid rgba(255,171,0,.35);
+                      <div style="background:var(--bg-card);border:1px solid {t_color.replace('var(--green)','rgba(0,200,83,.35)').replace('var(--amber)','rgba(255,171,0,.35)').replace('var(--muted)','rgba(96,125,139,.35)')};
                           border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;">
                         <div style="position:absolute;top:0;left:0;right:0;height:2.5px;
-                            background:linear-gradient(90deg,var(--amber),#ffd740);"></div>
-                        <div style="font-size:22px;font-weight:800;font-family:var(--mono)">{r.get('Ticker','—')}</div>
-                        <div style="font-size:13px;font-weight:700;color:var(--blue)">Rp {fmt_price(r.get('Close','—'))}</div>
-                        <div style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.8;">
-                          Koreksi dari High <strong style="color:var(--red)">{drw}%</strong><br>
-                          RSI <strong style="color:var(--amber)">{rsi}</strong>
-                          &nbsp;·&nbsp; Skor <strong style="color:var(--amber)">{scr}/5</strong><br>
-                          CMF <strong>{fmt_val(r.get('CMF','—'))}</strong>
-                          &nbsp;·&nbsp; UD Vol <strong>{fmt_val(r.get('UD_Vol_Ratio','—'))}</strong>
+                            background:{t_color};"></div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                          <span style="font-size:22px;font-weight:800;font-family:var(--mono)">{r.get('Ticker','—')}</span>
+                          <span style="font-size:11px;font-weight:700;color:{t_color}">{t_icon} {tier.replace('REVERSAL','').replace('STRONG','STRONG').strip()}</span>
                         </div>
-                        <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;font-family:var(--mono);background:rgba(255,171,0,.12);color:var(--amber);border:1px solid rgba(255,171,0,.3);margin-top:8px;">🔄 REVERSAL WATCH</span>
+                        <div style="font-size:13px;font-weight:700;color:var(--blue)">Rp {fmt_price(r.get('Close','—'))}</div>
+                        <div style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.9;">
+                          Koreksi <strong style="color:var(--red)">{drw}%</strong>
+                          &nbsp;·&nbsp; RSI <strong style="color:var(--amber)">{rsi}</strong><br>
+                          Rev Score <strong style="color:{t_color}">{scr}/5</strong>
+                          &nbsp;·&nbsp; Priority <strong style="color:{t_color}">{prio}</strong><br>
+                          CMF <strong>{fmt_val(r.get('CMF','—'))}</strong>
+                          &nbsp;·&nbsp; UD Vol <strong>{fmt_val(r.get('UD_Vol_Ratio','—'))}</strong><br>
+                          {'✅ Divergence ' if div_ok else ''}{'✅ Vol Confirmed' if vol_ok else ''}
+                        </div>
                       </div>""", unsafe_allow_html=True)
 
-          # Tabel reversal lengkap
-          rev_tbl_cols = [c for c in ['Ticker','Close','BB_Width_Str','Vol_Ratio',
-                                       'CMF','UD_Vol_Ratio','MACD','MACD_Slope',
-                                       'Rev_Score','Rev_Drawdown','Rev_RSI',
-                                       'Support','Resistance']
-                          if c in df_rev_show.columns]
+          # ── Full reversal table ─────────────────────────────────
+          st.write("")
+          rev_tbl_cols = [c for c in [
+              'Ticker','Close','Rev_Tier','Rev_Priority','Rev_Score',
+              'Rev_Drawdown','Rev_RSI','CMF','UD_Vol_Ratio',
+              'MACD_Slope','Rev_Divergence','Rev_VolConfirm',
+              'BB_Width_Str','Vol_Ratio','Support','Resistance'
+          ] if c in df_rev_show.columns]
+
           if rev_tbl_cols:
-              st.write("")
-              st.dataframe(df_rev_show[rev_tbl_cols].reset_index(drop=True),
-                  use_container_width=True, height=300,
+              st.dataframe(
+                  df_rev_show[rev_tbl_cols].reset_index(drop=True),
+                  use_container_width=True, height=350,
                   column_config={
-                      "Ticker":      st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                      "Close":       st.column_config.NumberColumn("Close",     format="Rp %,.0f"),
-                      "Support":     st.column_config.NumberColumn("Support",   format="Rp %,.0f"),
-                      "Resistance":  st.column_config.NumberColumn("Resistance",format="Rp %,.0f"),
-                      "Rev_Score":   st.column_config.ProgressColumn("Rev Score", min_value=0, max_value=5, format="%.0f"),
-                      "Rev_Drawdown":st.column_config.NumberColumn("Koreksi %", format="%.1f%%"),
-                      "Rev_RSI":     st.column_config.NumberColumn("RSI", format="%.1f"),
+                      "Ticker":         st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                      "Close":          st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
+                      "Rev_Tier":       st.column_config.TextColumn("Tier",         width=120),
+                      "Rev_Priority":   st.column_config.ProgressColumn("🏆 Priority", min_value=0, max_value=100, format="%.1f"),
+                      "Rev_Score":      st.column_config.ProgressColumn("Rev Score",  min_value=0, max_value=5, format="%.0f"),
+                      "Rev_Drawdown":   st.column_config.NumberColumn("Koreksi %",   format="%.2f%%"),
+                      "Rev_RSI":        st.column_config.NumberColumn("RSI",         format="%.2f"),
+                      "CMF":            st.column_config.NumberColumn("CMF",         format="%.2f"),
+                      "UD_Vol_Ratio":   st.column_config.NumberColumn("UD Vol",      format="%.2f"),
+                      "MACD_Slope":     st.column_config.NumberColumn("MACD Slope",  format="%.2f"),
+                      "Rev_Divergence": st.column_config.CheckboxColumn("Divergence"),
+                      "Rev_VolConfirm": st.column_config.CheckboxColumn("Vol Konfirm"),
+                      "Vol_Ratio":      st.column_config.NumberColumn("Vol Ratio",   format="%.2f"),
+                      "Support":        st.column_config.NumberColumn("Support",     format="Rp %,.0f"),
+                      "Resistance":     st.column_config.NumberColumn("Resistance",  format="Rp %,.0f"),
                   })
               st.download_button("⬇️ Download Reversal Watch (.xlsx)",
                   data=to_excel(df_rev_show[rev_tbl_cols], "Reversal_Watch"),
@@ -874,7 +942,7 @@ with tab2:
                             "Close":         st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
                             "Support":       st.column_config.NumberColumn("Support",    format="Rp %,.0f"),
                             "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
-                            "CVI":           st.column_config.NumberColumn("CVI",        format="%.3f"),
+                            "CVI":           st.column_config.NumberColumn("CVI",        format="%.2f"),
                             "Vol_Ratio":     st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
                             "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
                             "Alert_Flag":    st.column_config.TextColumn("🚨 Alert",    width=130),
@@ -1152,7 +1220,7 @@ with tab4:
                     "Close":         st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
                     "Support":       st.column_config.NumberColumn("Support",    format="Rp %,.0f"),
                     "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
-                    "CVI":           st.column_config.NumberColumn("CVI",        format="%.3f"),
+                    "CVI":           st.column_config.NumberColumn("CVI",        format="%.2f"),
                     "Vol_Ratio":     st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
                     "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
                     "Alert_Flag":    st.column_config.TextColumn("🚨 Alert",    width=130),
@@ -1300,7 +1368,7 @@ with tab6:
           column_config={
               "Ticker":        st.column_config.TextColumn("Ticker",  width=70, pinned=True),
               "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-              "CVI":           st.column_config.NumberColumn("CVI", format="%.3f"),
+              "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
               "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
               "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
           })
