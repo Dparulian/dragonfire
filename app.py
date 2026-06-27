@@ -328,6 +328,27 @@ if _all_raw.empty:
 else:
     df_all_stocks = _all_raw
 
+# ── REVERSAL data loading ─────────────────────────────────────────
+def normalize_reversal(df):
+    if df is None or df.empty: return pd.DataFrame()
+    df = df.copy()
+    df.columns = [c.lower().strip() for c in df.columns]
+    rev_map = {
+        'ticker':'Ticker','close':'Close','bb_width_str':'BB_Width_Str',
+        'vol_ratio':'Vol_Ratio','cmf':'CMF','ud_vol_ratio':'UD_Vol_Ratio',
+        'macd':'MACD','macd_slope':'MACD_Slope',
+        'rev_score':'Rev_Score','rev_drawdown':'Rev_Drawdown','rev_rsi':'Rev_RSI',
+        'support':'Support','resistance':'Resistance',
+    }
+    df = df.rename(columns=rev_map)
+    if 'Ticker' in df.columns:
+        df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
+    if 'Close' in df.columns:
+        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+    return df
+
+df_reversal = normalize_reversal(fetch_cloud_data('reversal_live'))
+
 # ── TIGER data loading ────────────────────────────────────────────
 TIGER_MAP = {
     'ticker':'Ticker','harga':'Harga','kasta':'Kasta','status':'Status',
@@ -589,16 +610,18 @@ else:
     n_sc    = len(df_screener)
     n_wl    = len(df_watchlist)
     n_all   = len(df_all_stocks)
+    n_rev   = len(df_reversal)
     n_buy   = len(df_screener[df_screener['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION|NYICIL", na=False)]) if n_sc else 0
     n_macd  = int(df_screener['MACD_PreCross'].sum()) if n_sc and 'MACD_PreCross' in df_screener.columns else 0
     n_alert = int(df_all_stocks['Alert_Flag'].str.len().gt(0).sum()) if n_all and 'Alert_Flag' in df_all_stocks.columns else 0
     n_hist  = df_history['Tanggal_Scan'].nunique() if not df_history.empty and 'Tanggal_Scan' in df_history.columns else 0
-    cm1,cm2,cm3,cm4,cm5,cm6 = st.columns([1,1,1,1,2,1.2])
+    cm1,cm2,cm3,cm4,cm5,cm6,cm7 = st.columns([1,1,1,1,1,2,1.2])
     with cm1: st.markdown(f'<div class="mcard"><div class="lbl">Screener Live</div><div class="val" style="color:var(--fire)">{n_sc}</div><div class="sub">Emiten aktif</div></div>', unsafe_allow_html=True)
     with cm2: st.markdown(f'<div class="mcard"><div class="lbl">Sinyal BUY</div><div class="val" style="color:var(--green)">{n_buy}</div><div class="sub">Akumulasi terdeteksi</div></div>', unsafe_allow_html=True)
     with cm3: st.markdown(f'<div class="mcard"><div class="lbl">⚡ MACD PreCross</div><div class="val" style="color:var(--purple)">{n_macd}</div><div class="sub">Prioritas masuk</div></div>', unsafe_allow_html=True)
-    with cm4: st.markdown(f'<div class="mcard"><div class="lbl">🚨 Alert Flag</div><div class="val" style="color:var(--red)">{n_alert}</div><div class="sub">Perlu diwaspadai</div></div>', unsafe_allow_html=True)
-    with cm5:
+    with cm4: st.markdown(f'<div class="mcard"><div class="lbl">🔄 Reversal Watch</div><div class="val" style="color:var(--amber)">{n_rev}</div><div class="sub">Pola pembalikan</div></div>', unsafe_allow_html=True)
+    with cm5: st.markdown(f'<div class="mcard"><div class="lbl">🚨 Alert Flag</div><div class="val" style="color:var(--red)">{n_alert}</div><div class="sub">Perlu diwaspadai</div></div>', unsafe_allow_html=True)
+    with cm6:
         if n_sc > 0 and 'CVI' in df_screener.columns:
             macd_s = df_screener[df_screener.get('MACD_PreCross', False) == True] if 'MACD_PreCross' in df_screener.columns else pd.DataFrame()
             top = macd_s.sort_values('CVI', ascending=False).iloc[0] if not macd_s.empty else df_screener.sort_values('CVI', ascending=False).iloc[0]
@@ -610,7 +633,7 @@ else:
             </div>""", unsafe_allow_html=True)
         else:
             st.markdown('<div class="mcard"><div class="lbl">Top Priority</div><div class="val">—</div></div>', unsafe_allow_html=True)
-    with cm6:
+    with cm7:
         st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
         if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_fire"):
             st.cache_data.clear(); st.rerun()
@@ -631,6 +654,7 @@ with st.sidebar:
         st.markdown(f'<div class="sb-stat"><div class="lbl">Screener Aktif</div><div class="val" style="color:var(--fire)">{n_sc}</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sb-stat"><div class="lbl">Sinyal BUY</div><div class="val" style="color:var(--green)">{n_buy}</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sb-stat"><div class="lbl">⚡ MACD PreCross</div><div class="val" style="color:var(--purple)">{n_macd}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="sb-stat"><div class="lbl">🔄 Reversal Watch</div><div class="val" style="color:var(--amber)">{n_rev}</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sb-stat"><div class="lbl">🚨 Alert Aktif</div><div class="val" style="color:var(--red)">{n_alert}</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sb-stat"><div class="lbl">Master Database</div><div class="val">{n_all} emiten</div></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="sb-stat"><div class="lbl">Riwayat Tersimpan</div><div class="val">{n_hist} hari</div></div>', unsafe_allow_html=True)
@@ -832,6 +856,67 @@ with tab1:
             data=to_excel(df_d[dcols], "Screener_Live"),
             file_name=f"DragonFire_Screener_{now_jkt().strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+        # ── REVERSAL WATCH SECTION ────────────────────────────────
+        st.write("")
+        st.markdown('<div class="section">🔄 REVERSAL WATCH — Saham Pola Pembalikan (di luar screener utama)</div>', unsafe_allow_html=True)
+        if df_reversal.empty:
+            st.markdown('<div class="abox abox-info">💡 Belum ada data reversal_live. Jalankan dragon_fire.py terbaru untuk mengaktifkan fitur ini.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="abox abox-warn">🔄 Saham-saham berikut <strong>tidak lolos screener utama</strong> (BB Width terlalu lebar = sudah dalam koreksi besar), namun menunjukkan sinyal teknikal pembalikan: RSI oversold, CMF mulai membalik, MACD histogram divergence bullish, dan volume pembeli kembali aktif. Gunakan sebagai watchlist reversal — entry <strong>hanya setelah ada konfirmasi candle hijau kuat + volume di atas rata-rata.</strong></div>', unsafe_allow_html=True)
+
+            # Sort by Rev_Score desc
+            df_rev_show = df_reversal.sort_values('Rev_Score', ascending=False) if 'Rev_Score' in df_reversal.columns else df_reversal
+
+            # Top 3 reversal cards
+            rev_top = df_rev_show.head(3)
+            if len(rev_top) > 0:
+                rev_cols_card = st.columns(min(3, len(rev_top)))
+                for i, (_, r) in enumerate(rev_top.iterrows()):
+                    with rev_cols_card[i]:
+                        drw = fmt_val(r.get('Rev_Drawdown', '—'))
+                        rsi = fmt_val(r.get('Rev_RSI', '—'))
+                        scr = fmt_val(r.get('Rev_Score', '—'))
+                        st.markdown(f"""
+                        <div style="background:var(--bg-card);border:1px solid rgba(255,171,0,.35);
+                            border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;">
+                          <div style="position:absolute;top:0;left:0;right:0;height:2.5px;
+                              background:linear-gradient(90deg,var(--amber),#ffd740);"></div>
+                          <div style="font-size:22px;font-weight:800;font-family:var(--mono)">{r.get('Ticker','—')}</div>
+                          <div style="font-size:13px;font-weight:700;color:var(--blue)">Rp {fmt_price(r.get('Close','—'))}</div>
+                          <div style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.8;">
+                            Koreksi dari High <strong style="color:var(--red)">{drw}%</strong><br>
+                            RSI <strong style="color:var(--amber)">{rsi}</strong>
+                            &nbsp;·&nbsp; Skor <strong style="color:var(--amber)">{scr}/5</strong><br>
+                            CMF <strong>{fmt_val(r.get('CMF','—'))}</strong>
+                            &nbsp;·&nbsp; UD Vol <strong>{fmt_val(r.get('UD_Vol_Ratio','—'))}</strong>
+                          </div>
+                          <span style="display:inline-block;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;font-family:var(--mono);background:rgba(255,171,0,.12);color:var(--amber);border:1px solid rgba(255,171,0,.3);margin-top:8px;">🔄 REVERSAL WATCH</span>
+                        </div>""", unsafe_allow_html=True)
+
+            # Tabel reversal lengkap
+            rev_tbl_cols = [c for c in ['Ticker','Close','BB_Width_Str','Vol_Ratio',
+                                         'CMF','UD_Vol_Ratio','MACD','MACD_Slope',
+                                         'Rev_Score','Rev_Drawdown','Rev_RSI',
+                                         'Support','Resistance']
+                            if c in df_rev_show.columns]
+            if rev_tbl_cols:
+                st.write("")
+                st.dataframe(df_rev_show[rev_tbl_cols].reset_index(drop=True),
+                    use_container_width=True, height=300,
+                    column_config={
+                        "Ticker":      st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                        "Close":       st.column_config.NumberColumn("Close",     format="Rp %,.0f"),
+                        "Support":     st.column_config.NumberColumn("Support",   format="Rp %,.0f"),
+                        "Resistance":  st.column_config.NumberColumn("Resistance",format="Rp %,.0f"),
+                        "Rev_Score":   st.column_config.ProgressColumn("Rev Score", min_value=0, max_value=5, format="%.0f"),
+                        "Rev_Drawdown":st.column_config.NumberColumn("Koreksi %", format="%.1f%%"),
+                        "Rev_RSI":     st.column_config.NumberColumn("RSI", format="%.1f"),
+                    })
+                st.download_button("⬇️ Download Reversal Watch (.xlsx)",
+                    data=to_excel(df_rev_show[rev_tbl_cols], "Reversal_Watch"),
+                    file_name=f"DragonFire_Reversal_{now_jkt().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ─────────────────────────────────────────────────────
 # TAB 2 · WATCHLIST — Upload file harian saja
@@ -1308,15 +1393,16 @@ with tab5:
             st.markdown(f"""
             <div class="dg">
               <div class="dc"><div class="k">Harga Terakhir</div><div class="v" style="color:var(--blue)">{fmt_price(row.get('Close'))}</div><div class="h">Harga penutupan</div></div>
-              <div class="dc"><div class="k">Skor CVI</div><div class="v" style="color:var(--fire)">{fmt_val(row.get('CVI'))}</div><div class="h">Capital Velocity Index</div></div>
-              <div class="dc"><div class="k">Est. Breakout</div><div class="v">{fmt_val(row.get('Hari_Ke_Breakout'))}</div><div class="h">Prediksi ML</div></div>
-              <div class="dc"><div class="k">Proyeksi Upside</div><div class="v" style="color:var(--green)">{fmt_val(row.get('Potensial_Upsize'))}</div><div class="h">Target kenaikan</div></div>
               <div class="dc"><div class="k">Support</div><div class="v" style="color:var(--green)">{fmt_price(row.get('Support'))}</div><div class="h">Low 20 hari</div></div>
               <div class="dc"><div class="k">Resistance</div><div class="v" style="color:var(--red)">{fmt_price(row.get('Resistance'))}</div><div class="h">High 20 hari</div></div>
-              <div class="dc"><div class="k">CMF</div><div class="v" style="color:{'var(--green)' if str(row.get('CMF','0')).replace('-','').replace('.','').isdigit() and float(str(row.get('CMF',0)))>0 else 'var(--red)'}">{fmt_val(row.get('CMF'))}</div><div class="h">Chaikin Money Flow</div></div>
-              <div class="dc"><div class="k">UD Vol Ratio</div><div class="v">{fmt_val(row.get('UD_Vol_Ratio'))}</div><div class="h">Up/Down Volume</div></div>
-              <div class="dc"><div class="k">Vol Ratio</div><div class="v">{fmt_val(row.get('Vol_Ratio'))}</div><div class="h">Vol vs MA20</div></div>
               <div class="dc"><div class="k">BB Width</div><div class="v">{fmt_val(row.get('BB_Width_Str'))}</div><div class="h">Squeeze indicator</div></div>
+              <div class="dc"><div class="k">Vol Ratio</div><div class="v">{fmt_val(row.get('Vol_Ratio'))}</div><div class="h">Vol vs MA20</div></div>
+              <div class="dc"><div class="k">Vol Velocity</div><div class="v">{fmt_val(row.get('Vol_Velocity'))}</div><div class="h">Kecepatan Vol 5h/20h</div></div>
+              <div class="dc"><div class="k">CMF</div><div class="v" style="color:{'var(--green)' if str(row.get('CMF','0')).replace('-','').replace('.','').isdigit() and float(str(row.get('CMF',0)))>0 else 'var(--red)'}">{fmt_val(row.get('CMF'))}</div><div class="h">Chaikin Money Flow</div></div>
+              <div class="dc"><div class="k">UD Vol Ratio</div><div class="v">{fmt_val(row.get('UD_Vol_Ratio'))}</div><div class="h">Up/Down Volume 20h</div></div>
+              <div class="dc"><div class="k">Est. Breakout</div><div class="v">{fmt_val(row.get('Hari_Ke_Breakout'))}</div><div class="h">Prediksi ML</div></div>
+              <div class="dc"><div class="k">Proyeksi Upside</div><div class="v" style="color:var(--green)">{fmt_val(row.get('Potensial_Upsize'))}</div><div class="h">Target kenaikan</div></div>
+              <div class="dc"><div class="k">Skor CVI</div><div class="v" style="color:var(--fire)">{fmt_val(row.get('CVI'))}</div><div class="h">Capital Velocity Index</div></div>
               <div class="dc"><div class="k">MACD</div><div class="v" style="color:{'var(--purple)' if is_macd else 'var(--text)'}">{fmt_val(row.get('MACD'))}</div><div class="h">{'⚡ Pre-Cross Zero!' if is_macd else 'Fast line'}</div></div>
               <div class="dc"><div class="k">MACD Slope</div><div class="v">{fmt_val(row.get('MACD_Slope'))}</div><div class="h">Arah 3 hari</div></div>
             </div>""", unsafe_allow_html=True)
