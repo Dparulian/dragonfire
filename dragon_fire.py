@@ -151,6 +151,15 @@ def build_features(df, ticker_name):
     df['MACD_Dist_Zero'] = df['MACD'] / df['Close'].replace(0, 1e-10)
     # Slope MACD 3 hari terakhir (positif = heading up toward zero)
     df['MACD_Slope'] = df['MACD'].diff(periods=3)
+    # Signal line & histogram (untuk reversal detector)
+    df['MACD_Sig']  = df['MACD'].ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD'] - df['MACD_Sig']
+
+    # RSI 14 (untuk reversal detector — oversold < 35)
+    delta  = df['Close'].diff()
+    gain   = delta.where(delta > 0, 0).rolling(14).mean()
+    loss   = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + gain / loss.replace(0, 1e-9)))
 
     # ── NEW: CMF 3-day change (untuk alert distribusi) ────────────
     df['CMF_3d_Change'] = df['CMF'].diff(periods=3)
@@ -190,6 +199,66 @@ def detect_macd_pre_crossover(row):
         return (macd_val < 0) and (abs(macd_dist) <= MACD_PROXIMITY_PCT) and (macd_slope > 0)
     except:
         return False
+
+
+# ── DETECTOR: REVERSAL WATCH ──────────────────────────────────────
+def detect_reversal(row, df_hist):
+    """
+    Deteksi pola pembalikan (reversal) — berbeda dari akumulasi.
+    Kriteria: saham sudah koreksi dalam + sinyal teknikal mulai berbalik.
+
+    1. Harga sudah turun >= 30% dari High 52 minggu (koreksi signifikan)
+    2. RSI < 35 — oversold condition
+    3. CMF Slope positif: arus uang mulai membalik ke atas (5 hari terakhir)
+    4. MACD Histogram divergence: harga baru low tapi MACD_Hist lebih tinggi dari
+       MACD_Hist pada 10 hari lalu (bullish divergence)
+    5. UD Vol Ratio mulai naik: pembeli kembali aktif (UD Vol >= 1.0)
+
+    Return: (bool is_reversal, dict detail_sinyal)
+    """
+    try:
+        close    = float(row.get('Close', 0))
+        cmf_sl   = float(row.get('CMF_Slope', 0))      # positif = arus uang membaik
+        ud_vol   = float(row.get('UD_Vol_Ratio', 0))
+        macd_h   = float(row.get('MACD_Hist', 0)) if 'MACD_Hist' in row.index else \
+                   float(row.get('MACD', 0)) - float(row.get('MACD_Sig', 0) if 'MACD_Sig' in row.index else 0)
+        macd_sl  = float(row.get('MACD_Slope', 0))
+
+        if close <= 0: return False, {}
+
+        # 1. Cek penurunan dari High 52 minggu (252 hari trading)
+        if df_hist is not None and len(df_hist) >= 60:
+            high_52w = df_hist['High'].tail(252).max() if len(df_hist) >= 252 \
+                       else df_hist['High'].max()
+            drawdown = (close - high_52w) / high_52w   # negatif = turun dari puncak
+        else:
+            drawdown = 0.0
+
+        # Cek RSI dari row (jika ada)
+        rsi_val = float(row.get('RSI', 50)) if 'RSI' in row.index else 50.0
+
+        # Kriteria evaluasi
+        crit_drawdown   = drawdown <= -0.30                    # turun >= 30% dari high
+        crit_rsi        = rsi_val < 35                         # oversold
+        crit_cmf_turn   = cmf_sl > 0                           # CMF slope positif
+        crit_macd_div   = macd_sl > 0 and macd_h > -0.001     # MACD hist membaik
+        crit_ud_vol     = ud_vol >= 1.0                        # pembeli tidak kalah
+
+        # Minimal 4 dari 5 kriteria harus terpenuhi
+        score_rev = sum([crit_drawdown, crit_rsi, crit_cmf_turn, crit_macd_div, crit_ud_vol])
+        is_reversal = score_rev >= 4
+
+        detail = {
+            'Rev_Drawdown_pct': round(drawdown * 100, 1),
+            'Rev_RSI':          round(rsi_val, 1),
+            'Rev_CMF_Slope':    round(cmf_sl, 4),
+            'Rev_MACD_Div':     crit_macd_div,
+            'Rev_UD_Vol':       round(ud_vol, 2),
+            'Rev_Score':        score_rev,
+        }
+        return is_reversal, detail
+    except:
+        return False, {}
 
 
 # ── DETECTOR: ANTI-TRAP ALERT FLAGS ──────────────────────────────
@@ -386,7 +455,11 @@ for i in range(0, len(tickers_jk), batch_size):
     batch = tickers_jk[i:i+batch_size]
     print(f"   ⏳ Mendownload Batch {i//batch_size + 1} ({len(batch)} emiten)...")
     try:
-        data = yf.download(batch, period="2y", group_by='ticker', auto_adjust=True, progress=False)
+        data = yf.download(batch, period="2y", group_by='ticker',
+                            auto_adjust=False, progress=False)
+                            # auto_adjust=False: pakai harga RAW agar Close = harga pasar
+                            # (auto_adjust=True menghasilkan Adjusted Close yang sudah
+                            # dikurangi dividen — menyebabkan beda harga vs broker/Yahoo)
         all_raw_dfs.append(data)
     except Exception as e:
         print(f"   ⚠️  Batch {i//batch_size + 1} gagal: {e}")
@@ -403,7 +476,10 @@ for idx, ticker in enumerate(DAFTAR_SAHAM, 1):
     t_jk = ticker + '.JK'
     try:
         if t_jk not in raw_data.columns.get_level_values(0): continue
-        df_raw = raw_data[t_jk].dropna(subset=['Close'])
+        df_raw = raw_data[t_jk].copy()
+        if 'Adj Close' in df_raw.columns:
+            df_raw = df_raw.drop(columns=['Adj Close'])   # kolom ekstra dari auto_adjust=False
+        df_raw = df_raw.dropna(subset=['Close'])
         df_t   = build_features(df_raw, ticker)
         if df_t is None or df_t.empty: continue
 
@@ -465,6 +541,30 @@ df_latest_global['MACD_PreCross'] = df_latest_global.apply(detect_macd_pre_cross
 n_macd = df_latest_global['MACD_PreCross'].sum()
 print(f"   ⚡ MACD Pre-Crossover terdeteksi: {n_macd} emiten")
 
+# ── Hitung Reversal Watch flag ────────────────────────────────────
+print("🔄 Mendeteksi pola reversal (koreksi dalam + sinyal teknikal berbalik)...")
+reversal_flags  = {}
+reversal_details= {}
+for _, row_rev in df_latest_global.iterrows():
+    t = row_rev.get('Ticker', '')
+    df_h = dict_df_full.get(t, None)
+    is_rev, det = detect_reversal(row_rev, df_h)
+    reversal_flags[t]   = is_rev
+    reversal_details[t] = det
+
+df_latest_global['Is_Reversal']   = df_latest_global['Ticker'].map(reversal_flags).fillna(False)
+df_latest_global['Rev_Score']     = df_latest_global['Ticker'].map(
+    lambda t: reversal_details.get(t, {}).get('Rev_Score', 0)
+)
+df_latest_global['Rev_Drawdown']  = df_latest_global['Ticker'].map(
+    lambda t: reversal_details.get(t, {}).get('Rev_Drawdown_pct', 0)
+)
+df_latest_global['Rev_RSI']       = df_latest_global['Ticker'].map(
+    lambda t: reversal_details.get(t, {}).get('Rev_RSI', 0)
+)
+n_reversal = int(df_latest_global['Is_Reversal'].sum())
+print(f"   🔄 Pola reversal terdeteksi: {n_reversal} emiten")
+
 # Hitung alert stats
 n_cmf_drop    = df_latest_global['Alert_Flag'].str.contains('CMF_DROP', na=False).sum()
 n_vol_spike   = df_latest_global['Alert_Flag'].str.contains('VOL_SPIKE_DIST', na=False).sum()
@@ -486,13 +586,15 @@ df_latest_global['Potensial_Upsize_raw']   = '+' + (df_latest_global['Expected_U
 df_latest_global['BB_Width_Str_raw']       = (df_latest_global['BB_Width'] * 100).round(2).astype(str) + '%'
 df_latest_global['MACD_raw']               = df_latest_global['MACD'].round(4)
 df_latest_global['MACD_Slope_raw']         = df_latest_global['MACD_Slope'].round(4)
+df_latest_global['RSI_raw']                = df_latest_global['RSI'].round(1) if 'RSI' in df_latest_global.columns else 0.0
 
 cols_final = [
     'Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str',
     'Vol_Ratio', 'Vol_Velocity', 'CMF', 'UD_Vol_Ratio',
     'Hari_Ke_Breakout', 'Potensial_Upsize', 'CVI',
     'MACD', 'MACD_Slope', 'MACD_PreCross',
-    'Alert_Flag', 'Analisis_Kesimpulan', 'Rekomendasi_Action'
+    'Alert_Flag', 'Analisis_Kesimpulan', 'Rekomendasi_Action',
+    'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
 ]
 
 # Master semua emiten
@@ -503,9 +605,25 @@ df_all_export = df_latest_global[[
     'CMF', 'UD_Vol_Ratio',
     'Hari_Ke_Breakout_raw', 'Potensial_Upsize_raw',
     'CVI_raw', 'MACD_raw', 'MACD_Slope_raw', 'MACD_PreCross',
-    'Alert_Flag', 'Analisis_Kesimpulan_raw', 'Rekomendasi_Action_raw'
+    'Alert_Flag', 'Analisis_Kesimpulan_raw', 'Rekomendasi_Action_raw',
+    'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
 ]].copy()
 df_all_export.columns = cols_final
+
+# ── Reversal candidates: TERPISAH dari screener utama ────────────
+# Tidak lolos BB filter, tapi menunjukkan sinyal pembalikan
+reversal_candidates = df_latest_global[
+    (df_latest_global['Is_Reversal'] == True) &
+    (df_latest_global['Vol_Ratio'] >= MIN_VOL_RATIO)
+].copy()
+reversal_candidates['RSI_str'] = df_latest_global.loc[
+    reversal_candidates.index, 'Rev_RSI'
+].round(1).astype(str)
+reversal_candidates['BB_Width_Str'] = (
+    reversal_candidates['BB_Width'] * 100
+).round(2).astype(str) + '%'
+n_rev_cand = len(reversal_candidates)
+print(f"🔄 Reversal candidates: {n_rev_cand} emiten masuk daftar pantau reversal")
 
 # Screener: filter original + filter likuiditas anti-anomali (BKDP fix)
 dragon_candidates = df_latest_global[
@@ -557,6 +675,15 @@ if not dragon_candidates.empty:
         try:
             df_excel_simple.to_sql('screener_live', db_engine, if_exists='replace', index=False)
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
+            # Simpan reversal candidates ke tabel tersendiri
+            if not reversal_candidates.empty:
+                rev_cols = [c for c in ['Ticker','Close','BB_Width_Str','Vol_Ratio',
+                                         'CMF','UD_Vol_Ratio','MACD','MACD_Slope',
+                                         'Rev_Score','Rev_Drawdown','Rev_RSI',
+                                         'Support','Resistance']
+                            if c in reversal_candidates.columns]
+                rev_export = reversal_candidates[rev_cols].copy()
+                rev_export.to_sql('reversal_live', db_engine, if_exists='replace', index=False)
 
             # ── screener_history: schema-safe append ──────────────
             # FIX: if_exists='append' gagal diam-diam ketika skema tabel di Supabase
@@ -584,11 +711,17 @@ if not dragon_candidates.empty:
                     missing_cols  = needed_cols - existing_cols
 
                     if missing_cols:
-                        # Skema lama tidak cocok: hapus tabel agar dibuat ulang
-                        # (data lama hilang, tapi ini satu kali saja saat migrasi)
-                        print(f"⚠️  screener_history: kolom hilang {missing_cols} — "
-                              f"tabel direkonstruksi ulang (migrasi skema).")
-                        conn.execute(text('DROP TABLE IF EXISTS "screener_history"'))
+                        # Skema berubah: TAMBAH kolom baru via ALTER TABLE
+                        # → data historis tetap aman (tidak di-DROP)
+                        print(f"⚠️  screener_history: kolom baru {missing_cols} — "
+                              f"menambahkan via ALTER TABLE (data lama dipertahankan).")
+                        for col in missing_cols:
+                            try:
+                                conn.execute(text(
+                                    f'ALTER TABLE "screener_history" ADD COLUMN IF NOT EXISTS "{col}" TEXT'
+                                ))
+                            except Exception as alter_err:
+                                print(f"   ⚠️  Tidak bisa ALTER kolom {col}: {alter_err}")
                         conn.commit()
 
                     else:
@@ -654,8 +787,14 @@ else:
                         "WHERE table_name = 'screener_history'"
                     )).fetchall())
                     needed_cols = set(c.lower() for c in df_histori.columns)
-                    if needed_cols - existing_cols:
-                        conn.execute(text('DROP TABLE IF EXISTS "screener_history"'))
+                    missing_else = needed_cols - existing_cols
+                    if missing_else:
+                        for col in missing_else:
+                            try:
+                                conn.execute(text(
+                                    f'ALTER TABLE "screener_history" ADD COLUMN IF NOT EXISTS "{col}" TEXT'
+                                ))
+                            except Exception: pass
                         conn.commit()
                     else:
                         conn.execute(text(
