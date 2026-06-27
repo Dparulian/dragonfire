@@ -638,16 +638,6 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     '📅  HISTORI HARIAN'
 ])
 
-col_eng_lbl, col_fire, col_tiger, col_spacer = st.columns([1.5, 1.5, 1.5, 8])
-with col_eng_lbl:
-    st.markdown("<div style='padding-top:10px;font-size:11px;font-weight:700;"
-                "color:#768390;text-transform:uppercase;letter-spacing:.8px;"
-                "'>Pilih Mesin</div>", unsafe_allow_html=True)
-with col_fire:
-    if st.button("🐉 Dragon Fire", use_container_width=True,
-                 type="primary" if st.session_state.active_engine == 'dragon' else "secondary"):
-        st.session_state.active_engine = 'dragon'; st.rerun()
-
 # TAB 1 · LIVE SCREENER
 # ─────────────────────────────────────────────────────
 with tab1:
