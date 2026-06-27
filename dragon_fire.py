@@ -664,7 +664,7 @@ if 'Ticker' in df_train_global.columns and 'Date' in df_train_global.columns:
 features = [
     'BB_Width', 'Vol_Ratio', 'Dist_to_MA20', 'Returns',
     'CMF', 'UD_Vol_Ratio', 'CMF_Slope', 'Vol_Velocity',
-    'BB_Width_Delta', 'Box_Position', 'ADX', 'Vol_Velocity'
+    'BB_Width_Delta', 'Box_Position', 'ADX'
 ]
 df_train_global.dropna(subset=features + ['Target_Days', 'Target_Upsize'], inplace=True)
 
