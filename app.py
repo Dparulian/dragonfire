@@ -1368,7 +1368,7 @@ with tab6:
       st.cache_data.clear()
       st.rerun()
 
-  if df_history.empty or 'Tanggal_Scan' not in df_history.columns:
+  if df_hist_tab.empty or 'Tanggal_Scan' not in df_hist_tab.columns:
       st.markdown('<div class="abox abox-info">💡 Belum ada rekam histori. '
                   'Jalankan dragon_fire.py dan klik Refresh Histori.</div>',
                   unsafe_allow_html=True)
@@ -1381,15 +1381,14 @@ with tab6:
           if s in ('nan','NaT','None',''): return None
           return s[:10]   # ambil 10 karakter pertama = YYYY-MM-DD
 
-      df_history = df_history.copy()
-      df_history['Tanggal_Scan'] = df_history['Tanggal_Scan'].apply(clean_tgl)
-      df_history = df_history.dropna(subset=['Tanggal_Scan'])
+      df_hist_tab['Tanggal_Scan'] = df_hist_tab['Tanggal_Scan'].apply(clean_tgl)
+      df_hist_tab = df_hist_tab.dropna(subset=['Tanggal_Scan'])
 
-      avail = sorted(df_history['Tanggal_Scan'].unique().tolist(), reverse=True)
+      avail = sorted(df_hist_tab['Tanggal_Scan'].unique().tolist(), reverse=True)
       hc1, hc2 = st.columns([3, 2])
       with hc1:
           sel_date = st.selectbox("📅 Pilih Tanggal:", options=avail)
-      df_hd = (df_history[df_history['Tanggal_Scan'] == sel_date]
+      df_hd = (df_hist_tab[df_hist_tab['Tanggal_Scan'] == sel_date]
                .drop(columns=['Tanggal_Scan'], errors='ignore').reset_index(drop=True))
       with hc2:
           st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
