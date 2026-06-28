@@ -44,39 +44,6 @@ MIN_UD_RATIO =  1.20
 # diperdagangkan seperti BKDP (Vol_Ratio=0 → BB_Width=0 → CVI=tak terhingga)
 MIN_VOL_RATIO = 0.01
 
-# ── IMPROVEMENT THRESHOLDS (berdasarkan backtest beta analysis) ───
-# A1: Threshold Accum Buy lebih ketat → kurangi false signal
-#     Justifikasi: backtest Accum Buy beta 0.97 dan hit rate 75.8%;
-#     dengan threshold lebih ketat sinyal yang tersisa lebih bersih.
-ACCUM_CMF_MIN        = 0.08    # naik dari 0.05 → hanya akumulasi benar-benar kuat
-ACCUM_UD_VOL_MIN     = 1.80    # naik dari 1.50 → pembeli dominan lebih konsisten
-ACCUM_EST_DAYS_MAX   = 32.0    # turun dari 36  → breakout lebih dekat lebih bagus
-
-# A2: Box Position filter — cegah entry terlalu dekat resistance
-#     Justifikasi: pola MKAP (breakout sudah berjalan, entry terlambat)
-ACCUM_BOX_POS_MAX    = 0.80    # Close tidak boleh di atas 80% dari range boks
-
-# A3: Vol Velocity minimum — konfirmasi volume mulai warming up
-#     Justifikasi: squeeze pasif tanpa dorongan volume sering tidak breakout
-ACCUM_VOL_VELOCITY_MIN = 0.80  # VMA5 minimal 80% dari VMA20
-
-# A4: Fast Trade dihapus dari priority screener
-#     Justifikasi: backtest avg return @exit hanya +1.08% — tidak efisien
-#     Fast Trade masih dihitung tapi tidak masuk df_excel_simple
-
-# B1: Profit Target Dinamis — berdasarkan Pred_Upsize bukan fixed +10%
-#     Formula: max(10%, Pred_Upsize * PROFIT_TARGET_RATIO)
-PROFIT_TARGET_RATIO  = 0.75   # 75% dari prediksi ML (konservatif tapi realistis)
-
-# B2: CVI Tier breakpoints
-CVI_TIER_HIGH        = 0.15   # CVI di atas ini = "Tinggi"
-CVI_TIER_MID         = 0.07   # CVI di atas ini = "Sedang", di bawah = "Rendah"
-
-# B3: Confidence Score — bobot per indikator
-# Skor 1–5 berdasarkan konfluensi: CMF kuat + UD Vol tinggi + BB sangat
-# sempit + MACD Pre-Cross + Volume warming up
-# (dihitung di compute_confidence_score)
-
 # Threshold MACD Pre-Crossover: MACD fast line masih negatif tapi
 # sudah dalam jarak <= MACD_PROXIMITY_PCT dari zero line
 MACD_PROXIMITY_PCT = 0.005   # 0.5% dari harga = "sangat dekat zero"
@@ -126,6 +93,60 @@ if not DATABASE_URL or not DATABASE_URL.strip():
 
 DATABASE_URL = sanitize_db_url(DATABASE_URL)
 IS_CLOUD = bool(DATABASE_URL and DATABASE_URL.strip())
+
+
+def save_screener_history(df_all_export, db_engine, today_str):
+    """
+    Simpan snapshot harian ke screener_history — bulletproof v4.
+    - Lowercase semua kolom (Postgres always lowercase)
+    - ALTER TABLE untuk kolom baru
+    - DELETE pakai tanggal_scan lowercase (cocok Postgres)
+    - INSERT bersih
+    """
+    try:
+        df_h = df_all_export.copy()
+        df_h.columns         = [c.lower() for c in df_h.columns]
+        df_h['tanggal_scan'] = today_str
+
+        with db_engine.connect() as conn:
+            tbl_ok = conn.execute(text(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema='public' AND table_name='screener_history')"
+            )).scalar()
+
+            if tbl_ok:
+                exist_cols = set(
+                    r[0].lower() for r in conn.execute(text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_schema='public' AND table_name='screener_history'"
+                    )).fetchall()
+                )
+                for col in sorted(set(df_h.columns) - exist_cols):
+                    try:
+                        conn.execute(text(
+                            f"ALTER TABLE screener_history "
+                            f"ADD COLUMN IF NOT EXISTS {col} TEXT"
+                        ))
+                    except Exception:
+                        pass
+                conn.commit()
+
+                res = conn.execute(text(
+                    "DELETE FROM screener_history WHERE tanggal_scan = :tgl"
+                ), {"tgl": today_str})
+                conn.commit()
+                if res.rowcount:
+                    print(f"   Hapus {res.rowcount} baris lama {today_str}.")
+
+        df_h.to_sql('screener_history', db_engine, if_exists='append', index=False)
+        print(f"   screener_history: +{len(df_h)} baris ({today_str}) OK")
+        return True
+    except Exception as e:
+        import traceback
+        print(f"screener_history ERROR: {e}")
+        traceback.print_exc()
+        return False
+
 
 if IS_CLOUD:
     try:
@@ -194,30 +215,6 @@ def build_features(df, ticker_name):
     loss   = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + gain / loss.replace(0, 1e-9)))
 
-    # ── ADX 14 (Average Directional Index) ───────────────────────
-    # Mengukur kekuatan trend — ADX > 25 = trend kuat, < 20 = sideways/lemah
-    # Dipakai sebagai konfirmasi di Confidence Score (B3)
-    high_s   = df['High']
-    low_s    = df['Low']
-    close_s  = df['Close']
-    plus_dm  = high_s.diff().clip(lower=0)
-    minus_dm = (-low_s.diff()).clip(lower=0)
-    # Jika kenaikan high lebih besar dari penurunan low, pakai +DM, else 0
-    plus_dm  = plus_dm.where(plus_dm > minus_dm, 0.0)
-    minus_dm = minus_dm.where(minus_dm > plus_dm, 0.0)
-    # True Range
-    tr1 = high_s - low_s
-    tr2 = (high_s - close_s.shift()).abs()
-    tr3 = (low_s  - close_s.shift()).abs()
-    tr  = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr14    = tr.rolling(14).mean().replace(0, 1e-9)
-    plus_di  = 100 * plus_dm.rolling(14).mean() / atr14
-    minus_di = 100 * minus_dm.rolling(14).mean() / atr14
-    dx       = (100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, 1e-9))
-    df['ADX']      = dx.rolling(14).mean()
-    df['Plus_DI']  = plus_di
-    df['Minus_DI'] = minus_di
-
     # ── NEW: CMF 3-day change (untuk alert distribusi) ────────────
     df['CMF_3d_Change'] = df['CMF'].diff(periods=3)
 
@@ -261,225 +258,61 @@ def detect_macd_pre_crossover(row):
 # ── DETECTOR: REVERSAL WATCH ──────────────────────────────────────
 def detect_reversal(row, df_hist):
     """
-    Deteksi pola pembalikan (reversal) v3 — 9 improvements aktif.
+    Deteksi pola pembalikan (reversal) — berbeda dari akumulasi.
+    Kriteria: saham sudah koreksi dalam + sinyal teknikal mulai berbalik.
 
-    KRITERIA WAJIB (min 4 dari 5):
-    1. Harga turun >= 30% dari High 52 minggu
-    2. RSI < 35 — oversold
-    3. CMF Slope positif — arus uang mulai membalik
-    4. MACD divergence bullish (MACD_Slope > 0 dan Hist membaik)
-    5. UD Vol Ratio >= 1.0 — pembeli tidak kalah
-
-    IMPROVEMENT 1 : StochRSI < 0.20 (extreme oversold lebih presisi)
-    IMPROVEMENT 2 : ADX menurun (trend melemah sebelum reversal)
-    IMPROVEMENT 3 : Formal bullish divergence
-    IMPROVEMENT 4 : Volume konfirmasi Vol_Ratio >= 1.5 dalam 10 hari
-    IMPROVEMENT 5 : Filter likuiditas — Vol_Ratio>=0.10, Close>=50,
-                    VMA20>=10.000 lot/hari (micro-cap tidak likuid disaring)
-    IMPROVEMENT 6 : Priority Score 0-100+ berbobot
-    IMPROVEMENT 7 : Penalti RSI > 50 (tidak reliable jika tidak oversold)
-    IMPROVEMENT 8 : Handle RSI=0/NaN sebagai anomali Low Liquidity
-    IMPROVEMENT 9 : Tier lebih ketat — STRONG butuh RSI<30, WATCH butuh RSI<35 strict
+    1. Harga sudah turun >= 30% dari High 52 minggu (koreksi signifikan)
+    2. RSI < 35 — oversold condition
+    3. CMF Slope positif: arus uang mulai membalik ke atas (5 hari terakhir)
+    4. MACD Histogram divergence: harga baru low tapi MACD_Hist lebih tinggi dari
+       MACD_Hist pada 10 hari lalu (bullish divergence)
+    5. UD Vol Ratio mulai naik: pembeli kembali aktif (UD Vol >= 1.0)
 
     Return: (bool is_reversal, dict detail_sinyal)
     """
     try:
-        close     = float(row.get('Close', 0))
-        cmf_sl    = float(row.get('CMF_Slope', 0))
-        ud_vol    = float(row.get('UD_Vol_Ratio', 0))
-        macd_h    = float(row.get('MACD_Hist', 0))
-        macd_sl   = float(row.get('MACD_Slope', 0))
-        vol_ratio = float(row.get('Vol_Ratio', 0))
+        close    = float(row.get('Close', 0))
+        cmf_sl   = float(row.get('CMF_Slope', 0))      # positif = arus uang membaik
+        ud_vol   = float(row.get('UD_Vol_Ratio', 0))
+        macd_h   = float(row.get('MACD_Hist', 0)) if 'MACD_Hist' in row.index else \
+                   float(row.get('MACD', 0)) - float(row.get('MACD_Sig', 0) if 'MACD_Sig' in row.index else 0)
+        macd_sl  = float(row.get('MACD_Slope', 0))
 
-        if close <= 0:
-            return False, {}
+        if close <= 0: return False, {}
 
-        # IMPROVEMENT 5a: Filter dasar likuiditas (Vol_Ratio & harga minimum)
-        if vol_ratio < 0.10 or close < 50:
-            return False, {}
-
-        # IMPROVEMENT 5b: Filter VMA20 minimum 10.000 lot/hari
-        # Menghilangkan micro-cap yang tidak bisa dimasuki dengan modal meaningful
-        if df_hist is not None and len(df_hist) >= 20:
-            try:
-                vma20_lot = float(df_hist['Volume'].rolling(20).mean().iloc[-1])
-                if vma20_lot < 10_000:
-                    return False, {}
-            except:
-                pass
-
-        # Kriteria 1: Drawdown dari High 52 minggu
+        # 1. Cek penurunan dari High 52 minggu (252 hari trading)
         if df_hist is not None and len(df_hist) >= 60:
-            high_52w = (df_hist['High'].tail(252).max()
-                        if len(df_hist) >= 252
-                        else df_hist['High'].max())
-            drawdown = (close - high_52w) / high_52w
+            high_52w = df_hist['High'].tail(252).max() if len(df_hist) >= 252 \
+                       else df_hist['High'].max()
+            drawdown = (close - high_52w) / high_52w   # negatif = turun dari puncak
         else:
             drawdown = 0.0
 
-        # Kriteria 2: RSI oversold
-        # IMPROVEMENT 8: Handle RSI=0 atau NaN sebagai anomali Low Liquidity
-        # RSI=0 terjadi saat saham tidak bergerak >=14 hari (gain=loss=0)
-        # Ini bukan oversold — saham tidak aktif diperdagangkan
-        rsi_raw            = row.get('RSI', None)
-        low_liquidity_flag = False
+        # Cek RSI dari row (jika ada)
+        rsi_val = float(row.get('RSI', 50)) if 'RSI' in row.index else 50.0
 
-        if rsi_raw is None or (isinstance(rsi_raw, float) and np.isnan(rsi_raw)):
-            rsi_val            = 50.0   # anggap netral
-            low_liquidity_flag = True
-        else:
-            rsi_val = float(rsi_raw)
-            if rsi_val == 0.0:
-                rsi_val            = 50.0   # reset ke netral untuk scoring
-                low_liquidity_flag = True
+        # Kriteria evaluasi
+        crit_drawdown   = drawdown <= -0.30                    # turun >= 30% dari high
+        crit_rsi        = rsi_val < 35                         # oversold
+        crit_cmf_turn   = cmf_sl > 0                           # CMF slope positif
+        crit_macd_div   = macd_sl > 0 and macd_h > -0.001     # MACD hist membaik
+        crit_ud_vol     = ud_vol >= 1.0                        # pembeli tidak kalah
 
-        # IMPROVEMENT 1: StochRSI
-        stoch_rsi = 0.5
-        if df_hist is not None and len(df_hist) >= 28 and 'Close' in df_hist.columns:
-            try:
-                close_s   = df_hist['Close'].tail(50)
-                delta     = close_s.diff()
-                g14       = delta.where(delta > 0, 0).rolling(14).mean()
-                l14       = (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rsi_s     = 100 - (100 / (1 + g14 / l14.replace(0, 1e-9)))
-                rsi_s     = rsi_s.dropna()
-                if len(rsi_s) >= 14:
-                    rsi_min   = rsi_s.rolling(14).min().iloc[-1]
-                    rsi_max   = rsi_s.rolling(14).max().iloc[-1]
-                    stoch_rsi = float((rsi_s.iloc[-1] - rsi_min)
-                                      / max(rsi_max - rsi_min, 1e-9))
-            except:
-                stoch_rsi = 0.5
-        crit_stoch_rsi = stoch_rsi < 0.20
-
-        # IMPROVEMENT 2: ADX melemah
-        adx_weakening = False
-        if df_hist is not None and len(df_hist) >= 30:
-            try:
-                hs  = df_hist['High'].tail(30)
-                ls  = df_hist['Low'].tail(30)
-                cs  = df_hist['Close'].tail(30)
-                pdm = hs.diff().clip(lower=0)
-                mdm = (-ls.diff()).clip(lower=0)
-                pdm = pdm.where(pdm > mdm, 0)
-                mdm = mdm.where(mdm > pdm, 0)
-                tr  = pd.concat([hs - ls,
-                                  (hs - cs.shift()).abs(),
-                                  (ls - cs.shift()).abs()],
-                                 axis=1).max(axis=1)
-                atr     = tr.rolling(14).mean().replace(0, 1e-9)
-                pdi     = 100 * pdm.rolling(14).mean() / atr
-                mdi     = 100 * mdm.rolling(14).mean() / atr
-                dx      = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, 1e-9)
-                adx_ser = dx.rolling(14).mean().dropna()
-                if len(adx_ser) >= 5:
-                    adx_weakening = bool(adx_ser.iloc[-1] < adx_ser.iloc[-5])
-            except:
-                adx_weakening = False
-
-        # IMPROVEMENT 3: Formal bullish divergence
-        bullish_divergence = False
-        if df_hist is not None and len(df_hist) >= 25:
-            try:
-                close_20      = df_hist['Close'].tail(20)
-                price_new_low = float(close_20.iloc[-1]) <= float(close_20.min())
-                if price_new_low:
-                    if ('MACD' in df_hist.columns
-                            and 'MACD_Sig' in df_hist.columns):
-                        hist_20            = (df_hist['MACD']
-                                              - df_hist['MACD_Sig']).tail(20)
-                        macd_not_new_low   = (float(hist_20.iloc[-1])
-                                              > float(hist_20.min()))
-                        bullish_divergence = bool(macd_not_new_low)
-                    else:
-                        bullish_divergence = bool(macd_sl > 0)
-            except:
-                bullish_divergence = False
-
-        # IMPROVEMENT 4: Volume konfirmasi dalam 10 hari
-        vol_confirmed = False
-        if df_hist is not None and len(df_hist) >= 15:
-            try:
-                vol_10        = df_hist['Volume'].tail(10)
-                vma20         = df_hist['Volume'].rolling(20).mean().tail(10)
-                ratio         = vol_10.values / (vma20.values + 1e-9)
-                vol_confirmed = bool(np.any(ratio >= 1.5))
-            except:
-                vol_confirmed = False
-
-        # Evaluasi 5 kriteria original
-        crit_drawdown = drawdown <= -0.30
-        crit_rsi      = rsi_val < 35
-        crit_cmf_turn = cmf_sl > 0
-        crit_macd_div = macd_sl > 0 and macd_h > -0.001
-        crit_ud_vol   = ud_vol >= 1.0
-
-        score_rev   = sum([crit_drawdown, crit_rsi, crit_cmf_turn,
-                           crit_macd_div, crit_ud_vol])
+        # Minimal 4 dari 5 kriteria harus terpenuhi
+        score_rev = sum([crit_drawdown, crit_rsi, crit_cmf_turn, crit_macd_div, crit_ud_vol])
         is_reversal = score_rev >= 4
 
-        # IMPROVEMENT 6: Priority Score 0-100+
-        cmf_val  = float(row.get('CMF', 0))
-        p_score  = 0.0
-        p_score += score_rev * 6                                   # 30 maks
-        p_score += max(0.0, (35.0 - rsi_val) * 1.25)              # 25 maks
-        p_score += min(20.0, abs(drawdown) * 100 * 0.25)          # 20 maks
-        p_score += (15.0 if cmf_val > 0.3
-                    else (10.0 if cmf_val > 0 else 5.0))          # 15 maks
-        p_score += min(10.0, ud_vol * 2.0)                        # 10 maks
-
-        # IMPROVEMENT 7: Penalti RSI > 50
-        if rsi_val > 50:
-            p_score -= (rsi_val - 50) * 0.5   # RSI 70=-10, RSI 85=-17.5
-
-        # Bonus improvements
-        if crit_stoch_rsi:     p_score += 5.0
-        if adx_weakening:      p_score += 3.0
-        if bullish_divergence: p_score += 5.0
-        if vol_confirmed:      p_score += 3.0
-
-        # IMPROVEMENT 8: Penalti Low Liquidity (RSI=0 anomali)
-        if low_liquidity_flag:
-            p_score -= 20.0
-
-        # IMPROVEMENT 9: Tier lebih ketat
-        # STRONG   : score=5 + RSI<30 + UD_Vol>=1.5 + bukan anomali likuiditas
-        # WATCH    : score>=4 + RSI wajib<35 (strict) + CMF slope positif
-        # PANTAU   : lolos filter tapi belum memenuhi kriteria Watch/Strong
-        if (score_rev == 5
-                and rsi_val < 30
-                and ud_vol >= 1.5
-                and not low_liquidity_flag):
-            rev_tier = 'STRONG REVERSAL'
-
-        elif (score_rev >= 4
-              and crit_rsi          # RSI<35 wajib, bukan sekadar opsional
-              and cmf_sl > 0
-              and not low_liquidity_flag):
-            rev_tier = 'REVERSAL WATCH'
-
-        else:
-            rev_tier = 'PANTAU REVERSAL'
-
         detail = {
-            'Rev_Drawdown_pct':  round(drawdown * 100, 1),
-            'Rev_RSI':           round(rsi_val, 1),
-            'Rev_CMF_Slope':     round(cmf_sl, 4),
-            'Rev_MACD_Div':      crit_macd_div,
-            'Rev_UD_Vol':        round(ud_vol, 2),
-            'Rev_Score':         score_rev,
-            'Rev_Priority':      round(p_score, 1),
-            'Rev_Tier':          rev_tier,
-            'Rev_StochRSI':      round(stoch_rsi, 3),
-            'Rev_ADX_Weak':      adx_weakening,
-            'Rev_Divergence':    bullish_divergence,
-            'Rev_Vol_Confirm':   vol_confirmed,
-            'Rev_Low_Liquidity': low_liquidity_flag,
+            'Rev_Drawdown_pct': round(drawdown * 100, 1),
+            'Rev_RSI':          round(rsi_val, 1),
+            'Rev_CMF_Slope':    round(cmf_sl, 4),
+            'Rev_MACD_Div':     crit_macd_div,
+            'Rev_UD_Vol':       round(ud_vol, 2),
+            'Rev_Score':        score_rev,
         }
         return is_reversal, detail
     except:
         return False, {}
-
 
 
 # ── DETECTOR: ANTI-TRAP ALERT FLAGS ──────────────────────────────
@@ -584,73 +417,6 @@ def apply_historical_feedback_loop(df_train, folder_output, dict_df_full):
     return df_train
 
 
-
-# ── B2: CVI TIER ──────────────────────────────────────────────────
-def compute_cvi_tier(cvi_val):
-    """
-    Kategorisasi CVI menjadi 3 tier untuk alokasi modal.
-    Tinggi = prioritas alokasi besar.
-    Sedang = alokasi normal.
-    Rendah = hati-hati, posisi kecil saja.
-    """
-    try:
-        v = float(cvi_val)
-        if v >= CVI_TIER_HIGH:  return 'Tinggi'
-        if v >= CVI_TIER_MID:   return 'Sedang'
-        return 'Rendah'
-    except:
-        return 'Rendah'
-
-
-# ── B3: CONFIDENCE SCORE ──────────────────────────────────────────
-def compute_confidence_score(row):
-    """
-    Skor kepercayaan 1–5 berdasarkan konfluensi indikator.
-    Setiap kondisi terpenuhi menambah 1 poin.
-
-    Kriteria (masing-masing +1):
-    1. CMF kuat   : CMF >= 0.10 (akumulasi benar-benar kuat)
-    2. UD Vol kuat: UD_Vol_Ratio >= 2.0 (pembeli dominan jelas)
-    3. BB sangat sempit: BB_Width <= 0.08 (energi sangat terkompres)
-    4. Volume warming: Vol_Velocity >= 0.90 (volume mulai meningkat)
-    5. MACD Pre-Cross atau ADX kuat: MACD Pre-Cross aktif ATAU ADX >= 25
-    """
-    try:
-        score = 0
-        if float(row.get('CMF',       0))   >= 0.10:   score += 1
-        if float(row.get('UD_Vol_Ratio', 0)) >= 2.00:   score += 1
-        if float(row.get('BB_Width',   1))  <= 0.08:   score += 1
-        if float(row.get('Vol_Velocity', 0)) >= 0.90:   score += 1
-        # Kriteria 5: MACD Pre-Cross ATAU ADX kuat
-        macd_pre = bool(row.get('MACD_PreCross', False))
-        adx_val  = float(row.get('ADX', 0))
-        if macd_pre or adx_val >= 25:                   score += 1
-        return score
-    except:
-        return 0
-
-
-# ── B1: PROFIT TARGET DINAMIS ─────────────────────────────────────
-def compute_profit_target(row):
-    """
-    Target profit yang lebih realistis dari fixed +10%.
-    Formula: max(10%, Pred_Upsize * PROFIT_TARGET_RATIO)
-
-    Justifikasi dari backtest:
-    - Accum Buy median actual = +32.2%, prediksi = +26.3%
-    - Menggunakan 75% dari prediksi (PROFIT_TARGET_RATIO=0.75) memberikan
-      target yang konservatif tapi jauh lebih berguna dari fixed +10%
-    - Untuk Fast Trade (ML overestimate +3.7pp), tetap cap di minimal 10%
-    """
-    try:
-        close       = float(row.get('Close', 0))
-        pred_upsize = float(row.get('Expected_Upsize', 0.10))  # fraksi, misal 0.26
-        dynamic_pct = max(0.10, pred_upsize * PROFIT_TARGET_RATIO)
-        return int(round(close * (1 + dynamic_pct)))
-    except:
-        return 0
-
-
 def generate_kesimpulan(row):
     status  = ""
     status += "Volum Kering. "  if row['Vol_Ratio'] < 0.5  else \
@@ -661,60 +427,28 @@ def generate_kesimpulan(row):
 
 
 def rekomendasi_action_mendalam(row):
-    """
-    Labeling rekomendasi dengan threshold yang diperketat berdasarkan backtest.
-
-    Perubahan dari versi sebelumnya (justifikasi dari backtest 2024-2026):
-    A1: CMF > 0.05→0.08, UD_Vol >= 1.5→1.8, Est <= 36→32 hari
-    A2: Box_Position <= 0.80 (tidak terlalu dekat resistance)
-    A3: Vol_Velocity >= 0.80 (volume mulai warming up)
-    A4: Fast Trade tidak masuk label priority — avg return @exit hanya +1.08%
-    """
     est_days = row['Expected_Days']
 
     if est_days > 55.0:
-        return 'HINDARI (DISTRIBUSI / TRAP TERDETEKSI)'
+        return "HINDARI (DISTRIBUSI / TRAP TERDETEKSI)"
 
-    bb    = row['BB_Width']
-    cmf   = row['CMF']
-    ud    = row['UD_Vol_Ratio']
-    vr    = row['Vol_Ratio']
-    vv    = float(row.get('Vol_Velocity', 0))
-    bp    = float(row.get('Box_Position', 1))
-
-    # ── ACCUMULATION BUY (kriteria paling ketat — A1, A2, A3) ────
-    # Semua threshold dinaikkan berdasarkan hasil backtest
-    accum_base = (
-        bb  <= BB_WIDTH_MAX   and
-        cmf >= ACCUM_CMF_MIN  and          # A1: 0.08 (naik dari 0.05)
-        ud  >= ACCUM_UD_VOL_MIN and        # A1: 1.80 (naik dari 1.50)
-        bp  <= ACCUM_BOX_POS_MAX and       # A2: tidak > 80% range boks
-        vv  >= ACCUM_VOL_VELOCITY_MIN      # A3: volume mulai warming up
-    )
-    if accum_base:
-        if est_days <= ACCUM_EST_DAYS_MAX:  # A1: 32 hari (turun dari 36)
-            base = 'ACCUMULATION BUY (NAGA TERBAIK)'
+    if row['BB_Width'] <= 0.15 and row['CMF'] > 0.05 and row['UD_Vol_Ratio'] >= 1.5:
+        if est_days <= 36.0:
+            base = "ACCUMULATION BUY (NAGA TERBAIK)"
         elif est_days <= 46.0:
-            base = 'STEALTH BUY (NYICIL SILUMAN)'
+            base = "STEALTH BUY (NYICIL SILUMAN)"
         else:
-            base = 'PANTAU (NAGA TIDUR PULAS)'
-
-    # ── STEALTH BUY (kriteria lebih longgar — akumulasi siluman) ─
-    elif bb <= BB_WIDTH_MAX and -0.05 <= cmf <= 0.05 and ud >= 2.0:
-        base = 'STEALTH BUY (NYICIL SILUMAN)'
-
-    # ── FAST TRADE — A4: tetap dihitung tapi BUKAN priority ──────
-    # Label tetap ada agar bisa dilihat di diagnostik ticker,
-    # tapi tidak masuk df_excel_simple (priority screener)
-    elif bb > 0.20 and vr >= 2.0 and cmf > 0.10:
-        base = 'FAST TRADE / BREAKOUT SCALPING'
-
-    elif vr > 1.5 and cmf < -0.10:
-        base = 'HINDARI (BANDAR DISTRIBUSI / DUMP)'
-
+            base = "PANTAU (NAGA TIDUR PULAS)"
+    elif row['BB_Width'] <= 0.15 and -0.05 <= row['CMF'] <= 0.05 and row['UD_Vol_Ratio'] >= 2.0:
+        base = "STEALTH BUY (NYICIL SILUMAN)"
+    elif row['BB_Width'] > 0.20 and row['Vol_Ratio'] >= 2.0 and row['CMF'] > 0.10:
+        base = "FAST TRADE / BREAKOUT SCALPING"
+    elif row['Vol_Ratio'] > 1.5 and row['CMF'] < -0.10:
+        base = "HINDARI (BANDAR DISTRIBUSI / DUMP)"
     else:
-        base = 'WAIT & SEE (NANTI DULU)'
+        base = "WAIT & SEE (NANTI DULU)"
 
+    # Tambahkan label MACD Pre-Crossover jika terdeteksi
     return build_macd_label(base, detect_macd_pre_crossover(row))
 
 
@@ -828,7 +562,7 @@ if 'Ticker' in df_train_global.columns and 'Date' in df_train_global.columns:
 features = [
     'BB_Width', 'Vol_Ratio', 'Dist_to_MA20', 'Returns',
     'CMF', 'UD_Vol_Ratio', 'CMF_Slope', 'Vol_Velocity',
-    'BB_Width_Delta', 'Box_Position', 'ADX'
+    'BB_Width_Delta', 'Box_Position'
 ]
 df_train_global.dropna(subset=features + ['Target_Days', 'Target_Upsize'], inplace=True)
 
@@ -882,28 +616,8 @@ df_latest_global['Rev_Drawdown']  = df_latest_global['Ticker'].map(
 df_latest_global['Rev_RSI']       = df_latest_global['Ticker'].map(
     lambda t: reversal_details.get(t, {}).get('Rev_RSI', 0)
 )
-df_latest_global['Rev_Priority']  = df_latest_global['Ticker'].map(
-    lambda t: reversal_details.get(t, {}).get('Rev_Priority', 0)
-)
-df_latest_global['Rev_Tier']      = df_latest_global['Ticker'].map(
-    lambda t: reversal_details.get(t, {}).get('Rev_Tier', '')
-)
-df_latest_global['Rev_StochRSI']  = df_latest_global['Ticker'].map(
-    lambda t: reversal_details.get(t, {}).get('Rev_StochRSI', 0.5)
-)
-df_latest_global['Rev_Divergence']= df_latest_global['Ticker'].map(
-    lambda t: reversal_details.get(t, {}).get('Rev_Divergence', False)
-)
-df_latest_global['Rev_VolConfirm']= df_latest_global['Ticker'].map(
-    lambda t: reversal_details.get(t, {}).get('Rev_Vol_Confirm', False)
-)
-df_latest_global['Rev_Low_Liquidity'] = df_latest_global['Ticker'].map(
-    lambda t: reversal_details.get(t, {}).get('Rev_Low_Liquidity', False)
-)
 n_reversal = int(df_latest_global['Is_Reversal'].sum())
-n_strong   = int((df_latest_global['Rev_Tier'] == 'STRONG REVERSAL').sum())
-n_watch    = int((df_latest_global['Rev_Tier'] == 'REVERSAL WATCH').sum())
-print(f"   🔄 Reversal terdeteksi: {n_reversal} (Strong: {n_strong} | Watch: {n_watch})")
+print(f"   🔄 Pola reversal terdeteksi: {n_reversal} emiten")
 
 # Hitung alert stats
 n_cmf_drop    = df_latest_global['Alert_Flag'].str.contains('CMF_DROP', na=False).sum()
@@ -928,27 +642,6 @@ df_latest_global['MACD_raw']               = df_latest_global['MACD'].round(4)
 df_latest_global['MACD_Slope_raw']         = df_latest_global['MACD_Slope'].round(4)
 df_latest_global['RSI_raw']                = df_latest_global['RSI'].round(1) if 'RSI' in df_latest_global.columns else 0.0
 
-# ── B1: Profit Target Dinamis ─────────────────────────────────────
-df_latest_global['Profit_Target'] = df_latest_global.apply(compute_profit_target, axis=1)
-print(f"   💰 Profit Target Dinamis dihitung (rata-rata: Rp "
-      f"{int(df_latest_global['Profit_Target'].mean()):,})")
-
-# ── B2: CVI Tier ──────────────────────────────────────────────────
-df_latest_global['CVI_Tier'] = df_latest_global['CVI_raw'].apply(compute_cvi_tier)
-n_high = (df_latest_global['CVI_Tier'] == 'Tinggi').sum()
-n_mid  = (df_latest_global['CVI_Tier'] == 'Sedang').sum()
-print(f"   📊 CVI Tier — Tinggi: {n_high} | Sedang: {n_mid} | "
-      f"Rendah: {len(df_latest_global)-n_high-n_mid}")
-
-# ── B3: Confidence Score ──────────────────────────────────────────
-# Perlu MACD_PreCross dan ADX sudah ada di df_latest_global
-df_latest_global['Conf_Score'] = df_latest_global.apply(
-    compute_confidence_score, axis=1
-)
-n_conf5 = (df_latest_global['Conf_Score'] == 5).sum()
-n_conf4 = (df_latest_global['Conf_Score'] == 4).sum()
-print(f"   ⭐ Confidence Score — Skor 5: {n_conf5} | Skor 4: {n_conf4} emiten")
-
 cols_final = [
     'Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str',
     'Vol_Ratio', 'Vol_Velocity', 'CMF', 'UD_Vol_Ratio',
@@ -956,13 +649,6 @@ cols_final = [
     'MACD', 'MACD_Slope', 'MACD_PreCross',
     'Alert_Flag', 'Analisis_Kesimpulan', 'Rekomendasi_Action',
     'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
-    'Rev_Priority', 'Rev_Tier', 'Rev_StochRSI', 'Rev_Divergence', 'Rev_VolConfirm',
-    'Rev_Low_Liquidity',
-    # ── B1/B2/B3 ─────────────────────────────────────────────────
-    'Profit_Target',    # B1: target profit dinamis (Rp)
-    'CVI_Tier',         # B2: 'Tinggi' / 'Sedang' / 'Rendah'
-    'Conf_Score',       # B3: skor 1–5 konfluensi indikator
-    'ADX',              # kekuatan trend (> 25 = trend kuat)
 ]
 
 # Master semua emiten
@@ -975,9 +661,6 @@ df_all_export = df_latest_global[[
     'CVI_raw', 'MACD_raw', 'MACD_Slope_raw', 'MACD_PreCross',
     'Alert_Flag', 'Analisis_Kesimpulan_raw', 'Rekomendasi_Action_raw',
     'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
-    'Rev_Priority', 'Rev_Tier', 'Rev_StochRSI', 'Rev_Divergence', 'Rev_VolConfirm',
-    'Rev_Low_Liquidity',
-    'Profit_Target', 'CVI_Tier', 'Conf_Score', 'ADX',
 ]].copy()
 df_all_export.columns = cols_final
 
@@ -987,18 +670,14 @@ reversal_candidates = df_latest_global[
     (df_latest_global['Is_Reversal'] == True) &
     (df_latest_global['Vol_Ratio'] >= MIN_VOL_RATIO)
 ].copy()
-# Sort by Priority Score (tertinggi = terbaik), lalu Rev_Score
-if 'Rev_Priority' in reversal_candidates.columns:
-    reversal_candidates = reversal_candidates.sort_values(
-        ['Rev_Priority', 'Rev_Score'], ascending=[False, False]
-    )
+reversal_candidates['RSI_str'] = df_latest_global.loc[
+    reversal_candidates.index, 'Rev_RSI'
+].round(1).astype(str)
 reversal_candidates['BB_Width_Str'] = (
     reversal_candidates['BB_Width'] * 100
 ).round(2).astype(str) + '%'
-n_rev_cand    = len(reversal_candidates)
-n_rev_strong  = int((reversal_candidates.get('Rev_Tier', pd.Series()) == 'STRONG REVERSAL').sum()) \
-    if 'Rev_Tier' in reversal_candidates.columns else 0
-print(f"🔄 Reversal candidates: {n_rev_cand} (Strong: {n_rev_strong})")
+n_rev_cand = len(reversal_candidates)
+print(f"🔄 Reversal candidates: {n_rev_cand} emiten masuk daftar pantau reversal")
 
 # Screener: filter original + filter likuiditas anti-anomali (BKDP fix)
 dragon_candidates = df_latest_global[
@@ -1027,55 +706,23 @@ if not dragon_candidates.empty:
     dragon_candidates['MACD']       = dragon_candidates['MACD'].round(4)
     dragon_candidates['MACD_Slope'] = dragon_candidates['MACD_Slope'].round(4)
 
-    # ── B1/B2/B3: Hitung kolom baru untuk dragon_candidates ──────
-    dragon_candidates['Profit_Target'] = dragon_candidates.apply(
-        compute_profit_target, axis=1
-    )
-    dragon_candidates['CVI_Tier']   = dragon_candidates['CVI'].apply(compute_cvi_tier)
-    dragon_candidates['Conf_Score'] = dragon_candidates.apply(
-        compute_confidence_score, axis=1
-    )
-    dragon_candidates['ADX'] = dragon_candidates['ADX'].round(1) \
-        if 'ADX' in dragon_candidates.columns else 0.0
-
-    # ── A4: Exclude Fast Trade dari priority screener ─────────────
-    # Fast Trade masih ada di all_stocks_live (Master DB) untuk
-    # bisa dicek via Diagnostik Ticker, tapi tidak masuk screener utama
-    # Justifikasi backtest: avg return @exit hanya +1.08% (tidak efisien)
-    df_priority = dragon_candidates[
-        ~dragon_candidates['Rekomendasi_Action'].str.contains(
-            'FAST TRADE', na=False
-        )
-    ].copy()
-
-    # Sort: MACD Pre-Crossover → Conf_Score → CVI tertinggi
-    df_priority['_sort_macd'] = df_priority['MACD_PreCross'].astype(int)
-    df_excel_simple = df_priority.sort_values(
-        ['_sort_macd', 'Conf_Score', 'CVI'], ascending=[False, False, False]
+    # Sort: MACD Pre-Crossover diprioritaskan dulu, lalu CVI tertinggi
+    dragon_candidates['_sort_macd'] = dragon_candidates['MACD_PreCross'].astype(int)
+    df_excel_simple = dragon_candidates.sort_values(
+        ['_sort_macd', 'CVI'], ascending=[False, False]
     )[cols_final].copy()
 
-    n_fast = len(dragon_candidates) - len(df_priority)
-    print(f"   ⚡ Fast Trade dikeluarkan dari priority: {n_fast} sinyal")
-    print(f"   📋 Priority screener tersisa: {len(df_excel_simple)} sinyal")
-
-    # Cetak ke terminal dengan highlight MACD + Conf Score
-    print('\n' + '='*210)
-    print('🐉 THE SLEEPING DRAGON — DUAL-BRAIN + CVI + CONF SCORE + MACD PRE-CROSS')
-    print('='*210)
+    # Cetak ke terminal dengan highlight MACD
+    print("\n" + "="*210)
+    print("🐉 THE SLEEPING DRAGON — DUAL-BRAIN + CVI + MACD PRE-CROSSOVER PRIORITY SORT")
+    print("="*210)
     n_macd_screen = df_excel_simple['MACD_PreCross'].sum()
     if n_macd_screen > 0:
         print(f"⚡ {n_macd_screen} saham dengan MACD Pre-Crossover (diprioritaskan di atas):")
         macd_tickers = df_excel_simple[df_excel_simple['MACD_PreCross'] == True]['Ticker'].tolist()
         print(f"   {macd_tickers}")
-    n_conf5 = (df_excel_simple['Conf_Score'] == 5).sum()
-    if n_conf5 > 0:
-        print(f"⭐ {n_conf5} saham Confidence Score 5/5 (konfluensi tertinggi):")
-        c5_tickers = df_excel_simple[df_excel_simple['Conf_Score'] == 5]['Ticker'].tolist()
-        print(f"   {c5_tickers}")
-    print(df_excel_simple[['Ticker','Close','CVI','CVI_Tier','Conf_Score',
-                            'Profit_Target','MACD_PreCross','Alert_Flag',
-                            'Hari_Ke_Breakout','Potensial_Upsize',
-                            'Rekomendasi_Action']].to_string(index=False))
+    print(df_excel_simple[['Ticker','Close','CVI','MACD','MACD_PreCross','Alert_Flag',
+                            'Hari_Ke_Breakout','Potensial_Upsize','Rekomendasi_Action']].to_string(index=False))
 
     # ── SIMPAN KE CLOUD DATABASE ──────────────────────────────────
     if IS_CLOUD:
@@ -1084,79 +731,21 @@ if not dragon_candidates.empty:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             # Simpan reversal candidates ke tabel tersendiri
             if not reversal_candidates.empty:
-                # Kolom untuk reversal_live — termasuk semua yang ditampilkan
-                # di dashboard dan Excel download agar tidak ada kolom kosong
-                rev_cols = [c for c in [
-                    'Ticker', 'Close', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity',
-                    'CMF', 'UD_Vol_Ratio', 'MACD', 'MACD_Slope', 'MACD_PreCross',
-                    'ADX', 'CVI', 'CVI_Tier', 'Conf_Score', 'Profit_Target',
-                    'Rekomendasi_Action', 'Analisis_Kesimpulan', 'Alert_Flag',
-                    'Rev_Score', 'Rev_Priority', 'Rev_Tier',
-                    'Rev_Drawdown', 'Rev_RSI', 'Rev_StochRSI',
-                    'Rev_Divergence', 'Rev_VolConfirm', 'Rev_ADX_Weak',
-                    'Rev_Low_Liquidity',
-                    'Support', 'Resistance',
-                ] if c in reversal_candidates.columns]
+                rev_cols = [c for c in ['Ticker','Close','BB_Width_Str','Vol_Ratio',
+                                         'CMF','UD_Vol_Ratio','MACD','MACD_Slope',
+                                         'Rev_Score','Rev_Drawdown','Rev_RSI',
+                                         'Support','Resistance']
+                            if c in reversal_candidates.columns]
                 rev_export = reversal_candidates[rev_cols].copy()
                 rev_export.to_sql('reversal_live', db_engine, if_exists='replace', index=False)
 
             # ── screener_history: schema-safe append ──────────────
-            df_histori = df_all_export.copy()
-            df_histori['Tanggal_Scan'] = today_wib_str()
-
-            with db_engine.connect() as conn:
-                # 1. Cek apakah tabel sudah ada
-                tbl_exists = conn.execute(text(
-                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                    "WHERE table_name = 'screener_history')"
-                )).scalar()
-
-                if tbl_exists:
-                    # 2. Cek apakah kolom di tabel cocok dengan DataFrame
-                    existing_cols = set(row[0] for row in conn.execute(text(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_name = 'screener_history'"
-                    )).fetchall())
-                    needed_cols  = set(c.lower() for c in df_histori.columns)
-                    missing_cols = needed_cols - existing_cols
-
-                    if missing_cols:
-                        # Skema berubah: TAMBAH kolom baru via ALTER TABLE
-                        # → data historis tetap aman (tidak di-DROP)
-                        print(f"⚠️  screener_history: kolom baru {missing_cols} — "
-                              f"menambahkan via ALTER TABLE (data lama dipertahankan).")
-                        for col in missing_cols:
-                            try:
-                                conn.execute(text(
-                                    f'ALTER TABLE "screener_history" '
-                                    f'ADD COLUMN IF NOT EXISTS "{col}" TEXT'
-                                ))
-                            except Exception as alter_err:
-                                print(f"   ⚠️  Tidak bisa ALTER kolom {col}: {alter_err}")
-                        conn.commit()
-                        print(f"   ✅ ALTER TABLE selesai — melanjutkan DELETE+INSERT.")
-
-                    # DELETE baris hari ini (idempotent) — SELALU dijalankan
-                    # baik setelah ALTER maupun saat skema sudah cocok.
-                    # Bug lama: DELETE hanya ada di branch 'else' sehingga saat
-                    # pertama kali ada kolom baru, data hari itu tidak masuk.
-                    tanggal_hari_ini = today_wib_str()
-                    deleted = conn.execute(text(
-                        'DELETE FROM screener_history '
-                        'WHERE "Tanggal_Scan" = :tgl'
-                    ), {"tgl": tanggal_hari_ini}).rowcount
-                    conn.commit()
-                    if deleted > 0:
-                        print(f"🔄 screener_history: {deleted} baris lama "
-                              f"{tanggal_hari_ini} dihapus sebelum insert baru.")
-
-            # 3. Insert — selalu append (idempotent karena sudah DELETE dulu)
-            # Postgres menyimpan nama kolom lowercase → lowercase df sebelum insert
-            # agar tidak ada column mismatch antara tabel dan DataFrame
-            df_histori_insert = df_histori.copy()
-            df_histori_insert.columns = [c.lower() for c in df_histori_insert.columns]
-            df_histori_insert.to_sql('screener_history', db_engine,
-                                     if_exists='append', index=False)
+            # FIX: if_exists='append' gagal diam-diam ketika skema tabel di Supabase
+            # tidak cocok dengan DataFrame (misal: kolom MACD/Alert_Flag belum ada
+            # di tabel lama yang dibuat sebelum kolom ini ditambahkan).
+            # Solusi: cek skema tabel dulu, jika berbeda hapus & buat ulang,
+            # lalu delete baris hari ini (idempotent) sebelum insert baru.
+            save_screener_history(df_all_export, db_engine, today_wib_str())
 
             print(f"\n🚀 DATABASE SUCCESS:")
             print(f"   → screener_live   : {len(df_excel_simple)} baris")
@@ -1190,43 +779,7 @@ else:
     if IS_CLOUD:
         try:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
-            df_histori = df_all_export.copy()
-            df_histori['Tanggal_Scan'] = today_wib_str()
-
-            with db_engine.connect() as conn:
-                tbl_exists = conn.execute(text(
-                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-                    "WHERE table_name = 'screener_history')"
-                )).scalar()
-                if tbl_exists:
-                    existing_cols = set(row[0] for row in conn.execute(text(
-                        "SELECT column_name FROM information_schema.columns "
-                        "WHERE table_name = 'screener_history'"
-                    )).fetchall())
-                    needed_cols = set(c.lower() for c in df_histori.columns)
-                    missing_else = needed_cols - existing_cols
-                    if missing_else:
-                        for col in missing_else:
-                            try:
-                                conn.execute(text(
-                                    f'ALTER TABLE "screener_history" '
-                                    f'ADD COLUMN IF NOT EXISTS "{col}" TEXT'
-                                ))
-                            except Exception:
-                                pass
-                        conn.commit()
-                        print(f"   ✅ ALTER TABLE (else-branch) selesai — lanjut DELETE+INSERT.")
-
-                    # DELETE selalu dijalankan — baik setelah ALTER maupun saat skema cocok
-                    conn.execute(text(
-                        'DELETE FROM screener_history '
-                        'WHERE "Tanggal_Scan" = :tgl'
-                    ), {"tgl": today_wib_str()})
-                    conn.commit()
-
-            df_histori_insert2 = df_histori.copy()
-            df_histori_insert2.columns = [c.lower() for c in df_histori_insert2.columns]
-            df_histori_insert2.to_sql('screener_history', db_engine, if_exists='append', index=False)
+            save_screener_history(df_all_export, db_engine, today_wib_str())
             print(f"🚀 Master DB diupdate. screener_history: +{len(df_histori)} baris ({today_wib_str()})")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
