@@ -1361,9 +1361,20 @@ with tab5:
 # ─────────────────────────────────────────────────────
 with tab6:
   st.markdown('<div class="slabel">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
+
+  # Refresh button khusus histori — karena cache TTl 600 detik
+  # dan data baru masuk setelah workflow GitHub Actions selesai
+  if st.button('🔄 Refresh Histori', key='refresh_hist', use_container_width=False):
+      st.cache_data.clear()
+      st.rerun()
+
   if df_history.empty or 'Tanggal_Scan' not in df_history.columns:
-      st.markdown('<div class="abox abox-info">💡 Belum ada rekam histori.</div>', unsafe_allow_html=True)
+      st.markdown('<div class="abox abox-info">💡 Belum ada rekam histori. '
+                  'Jalankan dragon_fire.py dan klik Refresh Histori.</div>',
+                  unsafe_allow_html=True)
   else:
+      # Pastikan Tanggal_Scan adalah string bersih (bukan Timestamp)
+      df_history['Tanggal_Scan'] = df_history['Tanggal_Scan'].astype(str).str[:10]
       avail = sorted(df_history['Tanggal_Scan'].unique().tolist(), reverse=True)
       hc1, hc2 = st.columns([3, 2])
       with hc1:
