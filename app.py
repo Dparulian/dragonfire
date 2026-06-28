@@ -381,6 +381,7 @@ def normalize_reversal(df):
         'rev_priority':'Rev_Priority','rev_tier':'Rev_Tier',
         'rev_stochrsi':'Rev_StochRSI','rev_divergence':'Rev_Divergence',
         'rev_volconfirm':'Rev_VolConfirm','rev_adx_weak':'Rev_ADX_Weak',
+        'rev_low_liquidity':'Rev_Low_Liquidity',
         'support':'Support','resistance':'Resistance',
     }
     df = df.rename(columns=rev_map)
@@ -391,7 +392,7 @@ def normalize_reversal(df):
     for col in ['Rev_Score','Rev_Priority','Rev_Drawdown','Rev_RSI','Rev_StochRSI']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-    for col in ['Rev_Divergence','Rev_VolConfirm','Rev_ADX_Weak']:
+    for col in ['Rev_Divergence','Rev_VolConfirm','Rev_ADX_Weak','Rev_Low_Liquidity']:
         if col in df.columns:
             df[col] = df[col].astype(str).str.lower().isin(['true','1','yes'])
     return df
@@ -770,6 +771,34 @@ with tab1:
           sort_col = 'Rev_Priority' if 'Rev_Priority' in df_reversal.columns else 'Rev_Score'
           df_rev_show = df_reversal.sort_values(sort_col, ascending=False).reset_index(drop=True)
 
+          # ── IMPROVEMENT #2: Toggle filter RSI ──────────────────
+          col_tog1, col_tog2, _ = st.columns([2, 2, 5])
+          with col_tog1:
+              only_oversold = st.toggle(
+                  '🎯 Hanya RSI < 50 (oversold)', value=False,
+                  help='Aktifkan untuk menyembunyikan kandidat yang RSI-nya tidak oversold')
+          with col_tog2:
+              hide_low_liq = st.toggle(
+                  '💧 Sembunyikan Low Liquidity', value=True,
+                  help='Sembunyikan saham dengan RSI=0 (anomali — tidak diperdagangkan aktif)')
+
+          if only_oversold and 'Rev_RSI' in df_rev_show.columns:
+              df_rev_show = df_rev_show[df_rev_show['Rev_RSI'] < 50]
+          if hide_low_liq and 'Rev_Low_Liquidity' in df_rev_show.columns:
+              df_rev_show = df_rev_show[df_rev_show['Rev_Low_Liquidity'] == False]
+
+          # Warning jika ada kandidat Low Liquidity
+          if 'Rev_Low_Liquidity' in df_reversal.columns:
+              n_low_liq = int(df_reversal['Rev_Low_Liquidity'].sum())
+              if n_low_liq > 0:
+                  liq_tickers = df_reversal[df_reversal['Rev_Low_Liquidity']==True]['Ticker'].tolist()
+                  st.markdown(
+                      f'<div class="abox abox-warn">⚠️ <strong>{n_low_liq} emiten Low Liquidity '
+                      f'(RSI=0/N/A)</strong>: {", ".join(liq_tickers)} — RSI=0 adalah anomali, '
+                      f'bukan oversold. Saham ini hampir tidak diperdagangkan selama ≥14 hari. '
+                      f'Verifikasi volume harian sebelum entry.</div>',
+                      unsafe_allow_html=True)
+
           # ── Tier filter tabs ────────────────────────────────────
           tier_counts = {}
           if 'Rev_Tier' in df_rev_show.columns:
@@ -839,7 +868,7 @@ with tab1:
               'Ticker','Close','Rev_Tier','Rev_Priority','Rev_Score',
               'Rev_Drawdown','Rev_RSI','CMF','UD_Vol_Ratio',
               'MACD_Slope','Rev_Divergence','Rev_VolConfirm',
-              'BB_Width_Str','Vol_Ratio','Support','Resistance'
+              'Rev_Low_Liquidity','BB_Width_Str','Vol_Ratio','Support','Resistance'
           ] if c in df_rev_show.columns]
 
           if rev_tbl_cols:
@@ -847,21 +876,22 @@ with tab1:
                   df_rev_show[rev_tbl_cols].reset_index(drop=True),
                   use_container_width=True, height=350,
                   column_config={
-                      "Ticker":         st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                      "Close":          st.column_config.NumberColumn("Close",      format="Rp %,.0f"),
-                      "Rev_Tier":       st.column_config.TextColumn("Tier",         width=120),
-                      "Rev_Priority":   st.column_config.ProgressColumn("🏆 Priority", min_value=0, max_value=100, format="%.1f"),
-                      "Rev_Score":      st.column_config.ProgressColumn("Rev Score",  min_value=0, max_value=5, format="%.0f"),
-                      "Rev_Drawdown":   st.column_config.NumberColumn("Koreksi %",   format="%.2f%%"),
-                      "Rev_RSI":        st.column_config.NumberColumn("RSI",         format="%.2f"),
-                      "CMF":            st.column_config.NumberColumn("CMF",         format="%.2f"),
-                      "UD_Vol_Ratio":   st.column_config.NumberColumn("UD Vol",      format="%.2f"),
-                      "MACD_Slope":     st.column_config.NumberColumn("MACD Slope",  format="%.2f"),
-                      "Rev_Divergence": st.column_config.CheckboxColumn("Divergence"),
-                      "Rev_VolConfirm": st.column_config.CheckboxColumn("Vol Konfirm"),
-                      "Vol_Ratio":      st.column_config.NumberColumn("Vol Ratio",   format="%.2f"),
-                      "Support":        st.column_config.NumberColumn("Support",     format="Rp %,.0f"),
-                      "Resistance":     st.column_config.NumberColumn("Resistance",  format="Rp %,.0f"),
+                      "Ticker":           st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                      "Close":            st.column_config.NumberColumn("Close",       format="Rp %,.0f"),
+                      "Rev_Tier":         st.column_config.TextColumn("Tier",          width=120),
+                      "Rev_Priority":     st.column_config.ProgressColumn("🏆 Priority", min_value=0, max_value=100, format="%.1f"),
+                      "Rev_Score":        st.column_config.ProgressColumn("Rev Score",  min_value=0, max_value=5, format="%.0f"),
+                      "Rev_Drawdown":     st.column_config.NumberColumn("Koreksi %",   format="%.2f%%"),
+                      "Rev_RSI":          st.column_config.NumberColumn("RSI",         format="%.2f"),
+                      "CMF":              st.column_config.NumberColumn("CMF",         format="%.2f"),
+                      "UD_Vol_Ratio":     st.column_config.NumberColumn("UD Vol",      format="%.2f"),
+                      "MACD_Slope":       st.column_config.NumberColumn("MACD Slope",  format="%.2f"),
+                      "Rev_Divergence":   st.column_config.CheckboxColumn("Divergence"),
+                      "Rev_VolConfirm":   st.column_config.CheckboxColumn("Vol Konfirm"),
+                      "Rev_Low_Liquidity":st.column_config.CheckboxColumn("⚠️ Low Liq"),
+                      "Vol_Ratio":        st.column_config.NumberColumn("Vol Ratio",   format="%.2f"),
+                      "Support":          st.column_config.NumberColumn("Support",     format="Rp %,.0f"),
+                      "Resistance":       st.column_config.NumberColumn("Resistance",  format="Rp %,.0f"),
                   })
               st.download_button("⬇️ Download Reversal Watch (.xlsx)",
                   data=to_excel(df_rev_show[rev_tbl_cols], "Reversal_Watch"),
