@@ -1362,11 +1362,28 @@ with tab5:
 with tab6:
   st.markdown('<div class="slabel">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
 
-  # Refresh button khusus histori — karena cache TTl 600 detik
-  # dan data baru masuk setelah workflow GitHub Actions selesai
   if st.button('🔄 Refresh Histori', key='refresh_hist', use_container_width=False):
       st.cache_data.clear()
       st.rerun()
+
+  # ── Fetch langsung dari DB tanpa cache ───────────────────────────
+  # df_history di level modul dimuat sekali saat app start — tidak update
+  # otomatis. Query langsung memastikan data hari ini selalu tampil.
+  df_hist_tab = pd.DataFrame()  # default kosong
+  try:
+      if IS_CLOUD:
+          _hist_engine = create_engine(DATABASE_URL)
+          df_hist_tab  = pd.read_sql('SELECT * FROM "screener_history"', _hist_engine)
+      else:
+          df_hist_tab  = df_history.copy()
+      # Lowercase semua kolom — handle mixed-case dari versi DB lama
+      df_hist_tab.columns = [c.lower().strip() for c in df_hist_tab.columns]
+      # Rename tanggal_scan → Tanggal_Scan
+      if 'tanggal_scan' in df_hist_tab.columns:
+          df_hist_tab = df_hist_tab.rename(columns={'tanggal_scan': 'Tanggal_Scan'})
+  except Exception as _he:
+      st.warning(f"Tidak bisa load histori dari DB: {_he}. Pakai cache lokal.")
+      df_hist_tab = df_history.copy()
 
   if df_hist_tab.empty or 'Tanggal_Scan' not in df_hist_tab.columns:
       st.markdown('<div class="abox abox-info">💡 Belum ada rekam histori. '
