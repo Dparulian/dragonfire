@@ -1366,110 +1366,105 @@ with tab6:
       st.cache_data.clear()
       st.rerun()
 
-  # ── Fetch langsung dari DB ─────────────────────────────────────
+  # ── Fetch dari DB — gabung dua kolom tanggal via SQL COALESCE ──
+  # DB punya dua kolom tanggal: "Tanggal_Scan" (data lama, mixed case)
+  # dan tanggal_scan (data baru, lowercase). COALESCE ambil yang tidak null.
   df_hist_tab = pd.DataFrame()
-  _hist_error = None
+  _hist_err   = None
+  _SQL = """
+      SELECT
+          COALESCE("Tanggal_Scan", tanggal_scan) AS tanggal_scan,
+          ticker, close, support, resistance,
+          bb_width_str, vol_ratio, vol_velocity, cmf, ud_vol_ratio,
+          hari_ke_breakout, potensial_upsize, cvi,
+          macd, macd_slope, macd_precross,
+          alert_flag, analisis_kesimpulan, rekomendasi_action,
+          cvi_tier, conf_score, profit_target, adx
+      FROM screener_history
+  """
   try:
-      df_hist_tab = pd.read_sql('SELECT * FROM screener_history', engine)
-  except Exception as _he:
-      _hist_error = str(_he)
-
-  # ── DEBUG SEMENTARA — hapus setelah masalah resolved ──────────
-  with st.expander("🔧 Debug Info (hapus setelah fix)", expanded=True):
-      st.write(f"**Shape raw:** {df_hist_tab.shape}")
-      st.write(f"**Error:** {_hist_error}")
-      if not df_hist_tab.empty:
-          st.write(f"**Kolom raw (sebelum normalize):** {df_hist_tab.columns.tolist()}")
-          # Cari kolom yang mengandung 'tanggal'
-          tgl_cols = [c for c in df_hist_tab.columns if 'tanggal' in str(c).lower()]
-          st.write(f"**Kolom mengandung 'tanggal':** {tgl_cols}")
-          # Sample 3 baris
-          st.write("**Sample 3 baris:**")
-          st.dataframe(df_hist_tab.head(3))
-
-  # ── Normalkan nama kolom ───────────────────────────────────────
-  if not df_hist_tab.empty:
-      # 1. Lowercase semua kolom
-      df_hist_tab.columns = [str(c).lower().strip() for c in df_hist_tab.columns]
-
-      # 2. Hapus kolom duplikat — pilih yang pertama
-      df_hist_tab = df_hist_tab.loc[:, ~df_hist_tab.columns.duplicated(keep='first')]
-
-      # 3. Pastikan kolom tanggal_scan ada, lalu rename ke Tanggal_Scan
-      # (Supabase mungkin punya 'tanggal_scan' lowercase ATAU '"Tanggal_Scan"' quoted)
-      tgl_found = None
-      for _c in df_hist_tab.columns:
-          if _c.replace('"','').replace("'",'').strip() == 'tanggal_scan':
-              tgl_found = _c
-              break
-      if tgl_found and tgl_found != 'Tanggal_Scan':
-          df_hist_tab = df_hist_tab.rename(columns={tgl_found: 'Tanggal_Scan'})
-      elif tgl_found is None and 'tanggal_scan' not in df_hist_tab.columns:
-          # Tidak ada kolom tanggal sama sekali — pakai cache
-          _hist_error = "Kolom tanggal_scan tidak ditemukan di tabel"
-          df_hist_tab = pd.DataFrame()
-
-  # ── Fallback ke cache jika ada error ──────────────────────────
-  if df_hist_tab.empty and _hist_error:
-      st.warning(f"⚠️ Histori dari DB gagal ({_hist_error}). Menampilkan cache lokal.")
-      df_hist_tab = df_history.copy()
-      if not df_hist_tab.empty and 'Tanggal_Scan' not in df_hist_tab.columns:
+      df_hist_tab = pd.read_sql(_SQL, engine)
+  except Exception:
+      # Fallback: query tanpa COALESCE jika kolom lama tidak ada
+      try:
+          df_hist_tab = pd.read_sql(
+              'SELECT * FROM screener_history', engine)
           df_hist_tab.columns = [str(c).lower().strip() for c in df_hist_tab.columns]
-          if 'tanggal_scan' in df_hist_tab.columns:
-              df_hist_tab = df_hist_tab.rename(columns={'tanggal_scan': 'Tanggal_Scan'})
+          # Hapus duplikat kolom — gabung tanggal_scan secara manual
+          seen = {}
+          new_cols, keep = [], []
+          for i, c in enumerate(df_hist_tab.columns):
+              if c not in seen:
+                  seen[c] = i; new_cols.append(c); keep.append(i)
+              elif c == 'tanggal_scan':
+                  # Merge: fillna dengan kolom kedua
+                  df_hist_tab.iloc[:, seen[c]] = (
+                      df_hist_tab.iloc[:, seen[c]]
+                      .fillna(df_hist_tab.iloc[:, i])
+                  )
+          df_hist_tab = df_hist_tab.iloc[:, keep]
+          df_hist_tab.columns = new_cols
+      except Exception as _he:
+          _hist_err = str(_he)
+
+  if df_hist_tab.empty and _hist_err:
+      st.warning(f"⚠️ DB error: {_hist_err}. Pakai cache lokal.")
+      df_hist_tab = df_history.copy()
+
+  # ── Normalkan via DISPLAY_MAP ────────────────────────────────────
+  df_hist_tab = normalize_columns(df_hist_tab)
+
+  # ── Bersihkan Tanggal_Scan ────────────────────────────────────────
+  if not df_hist_tab.empty and 'Tanggal_Scan' in df_hist_tab.columns:
+      df_hist_tab = df_hist_tab.copy()
+      df_hist_tab['Tanggal_Scan'] = (
+          df_hist_tab['Tanggal_Scan']
+          .astype(str).str.strip().str[:10]
+          .replace({'nan':'', 'NaT':'', 'None':''})
+          .replace('', pd.NA)
+      )
+      df_hist_tab = df_hist_tab[df_hist_tab['Tanggal_Scan'].notna()].copy()
 
   if df_hist_tab.empty or 'Tanggal_Scan' not in df_hist_tab.columns:
       st.info('💡 Belum ada rekam histori. Jalankan dragon_fire.py lalu klik Refresh Histori.')
   else:
-      # ── Bersihkan nilai Tanggal_Scan ────────────────────────────
-      def _clean_tgl(v):
-          if v is None: return None
-          s = str(v).strip()
-          return None if s in ('nan','NaT','None','') else s[:10]
+      avail = sorted(df_hist_tab['Tanggal_Scan'].unique().tolist(), reverse=True)
+      hc1, hc2 = st.columns([3, 2])
+      with hc1:
+          sel_date = st.selectbox('📅 Pilih Tanggal:', options=avail)
+      df_hd = (df_hist_tab[df_hist_tab['Tanggal_Scan'] == sel_date]
+               .drop(columns=['Tanggal_Scan'], errors='ignore')
+               .reset_index(drop=True))
+      with hc2:
+          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+          st.download_button(f"⬇️ Download {sel_date} (.xlsx)",
+              data=to_excel(df_hd, f"Histori_{sel_date}"),
+              file_name=f"DragonFire_Histori_{sel_date}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True)
 
-      df_hist_tab = df_hist_tab.copy()
-      df_hist_tab['Tanggal_Scan'] = df_hist_tab['Tanggal_Scan'].apply(_clean_tgl)
-      df_hist_tab = df_hist_tab[df_hist_tab['Tanggal_Scan'].notna()].copy()
+      n_hb = len(df_hd[df_hd['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION",na=False)]) if 'Rekomendasi_Action' in df_hd.columns else 0
+      n_hm = int(df_hd['MACD_PreCross'].sum()) if 'MACD_PreCross' in df_hd.columns else 0
+      n_ha = int(df_hd['Alert_Flag'].str.len().gt(0).sum()) if 'Alert_Flag' in df_hd.columns else 0
+      h1,h2,h3,h4 = st.columns(4)
+      h1.metric("Total Emiten", len(df_hd))
+      h2.metric("Sinyal BUY", n_hb)
+      h3.metric("⚡ MACD PreCross", n_hm)
+      h4.metric("🚨 Alert", n_ha)
 
-      if df_hist_tab.empty:
-          st.info('💡 Data histori ada tapi kolom tanggal kosong semua.')
-      else:
-          avail = sorted(df_hist_tab['Tanggal_Scan'].unique().tolist(), reverse=True)
-          hc1, hc2 = st.columns([3, 2])
-          with hc1:
-              sel_date = st.selectbox('📅 Pilih Tanggal:', options=avail)
-          df_hd = (df_hist_tab[df_hist_tab['Tanggal_Scan'] == sel_date]
-                   .drop(columns=['Tanggal_Scan'], errors='ignore')
-                   .reset_index(drop=True))
-          with hc2:
-              st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-              st.download_button(f"⬇️ Download {sel_date} (.xlsx)",
-                  data=to_excel(df_hd, f"Histori_{sel_date}"),
-                  file_name=f"DragonFire_Histori_{sel_date}.xlsx",
-                  mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                  use_container_width=True)
+      srch = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: BBCA, GLVA ...", key="hist_search").strip().upper()
+      if srch:
+          df_hd = df_hd[df_hd['Ticker'] == srch].reset_index(drop=True)
 
-          n_hb = len(df_hd[df_hd['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION", na=False)]) if 'Rekomendasi_Action' in df_hd.columns else 0
-          n_hm = int(df_hd['MACD_PreCross'].sum()) if 'MACD_PreCross' in df_hd.columns else 0
-          n_ha = int(df_hd['Alert_Flag'].str.len().gt(0).sum()) if 'Alert_Flag' in df_hd.columns else 0
-          h1, h2, h3, h4 = st.columns(4)
-          h1.metric("Total Emiten", len(df_hd))
-          h2.metric("Sinyal BUY", n_hb)
-          h3.metric("⚡ MACD PreCross", n_hm)
-          h4.metric("🚨 Alert", n_ha)
-
-          srch = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: BBCA, GLVA ...", key="hist_search").strip().upper()
-          if srch:
-              df_hd = df_hd[df_hd['Ticker'] == srch].reset_index(drop=True)
-
-          hcols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str','Vol_Ratio',
-                                'Hari_Ke_Breakout','Potensial_Upsize','CVI','MACD','MACD_PreCross',
-                                'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_hd.columns]
-          st.dataframe(df_hd[hcols], use_container_width=True, height=420,
-              column_config={
-                  "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                  "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                  "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
-                  "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
-                  "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
-              })
+      hcols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str','Vol_Ratio',
+                            'Hari_Ke_Breakout','Potensial_Upsize','CVI','MACD','MACD_PreCross',
+                            'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_hd.columns]
+      st.dataframe(df_hd[hcols] if hcols else df_hd,
+                   use_container_width=True, height=420,
+          column_config={
+              "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
+              "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
+              "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
+          })
