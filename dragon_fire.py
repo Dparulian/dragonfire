@@ -1151,8 +1151,12 @@ if not dragon_candidates.empty:
                               f"{tanggal_hari_ini} dihapus sebelum insert baru.")
 
             # 3. Insert — selalu append (idempotent karena sudah DELETE dulu)
-            df_histori.to_sql('screener_history', db_engine,
-                              if_exists='append', index=False)
+            # Postgres menyimpan nama kolom lowercase → lowercase df sebelum insert
+            # agar tidak ada column mismatch antara tabel dan DataFrame
+            df_histori_insert = df_histori.copy()
+            df_histori_insert.columns = [c.lower() for c in df_histori_insert.columns]
+            df_histori_insert.to_sql('screener_history', db_engine,
+                                     if_exists='append', index=False)
 
             print(f"\n🚀 DATABASE SUCCESS:")
             print(f"   → screener_live   : {len(df_excel_simple)} baris")
@@ -1205,17 +1209,24 @@ else:
                         for col in missing_else:
                             try:
                                 conn.execute(text(
-                                    f'ALTER TABLE "screener_history" ADD COLUMN IF NOT EXISTS "{col}" TEXT'
+                                    f'ALTER TABLE "screener_history" '
+                                    f'ADD COLUMN IF NOT EXISTS "{col}" TEXT'
                                 ))
-                            except Exception: pass
+                            except Exception:
+                                pass
                         conn.commit()
-                    else:
-                        conn.execute(text(
-                            "DELETE FROM screener_history WHERE \"Tanggal_Scan\" = :tgl"
-                        ), {"tgl": today_wib_str()})
-                        conn.commit()
+                        print(f"   ✅ ALTER TABLE (else-branch) selesai — lanjut DELETE+INSERT.")
 
-            df_histori.to_sql('screener_history', db_engine, if_exists='append', index=False)
+                    # DELETE selalu dijalankan — baik setelah ALTER maupun saat skema cocok
+                    conn.execute(text(
+                        'DELETE FROM screener_history '
+                        'WHERE "Tanggal_Scan" = :tgl'
+                    ), {"tgl": today_wib_str()})
+                    conn.commit()
+
+            df_histori_insert2 = df_histori.copy()
+            df_histori_insert2.columns = [c.lower() for c in df_histori_insert2.columns]
+            df_histori_insert2.to_sql('screener_history', db_engine, if_exists='append', index=False)
             print(f"🚀 Master DB diupdate. screener_history: +{len(df_histori)} baris ({today_wib_str()})")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
