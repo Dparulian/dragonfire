@@ -261,177 +261,225 @@ def detect_macd_pre_crossover(row):
 # ── DETECTOR: REVERSAL WATCH ──────────────────────────────────────
 def detect_reversal(row, df_hist):
     """
-    Deteksi pola pembalikan (reversal) v2 — 6 improvements:
+    Deteksi pola pembalikan (reversal) v3 — 9 improvements aktif.
 
-    KRITERIA WAJIB (min 4 dari 5 original, unchanged):
+    KRITERIA WAJIB (min 4 dari 5):
     1. Harga turun >= 30% dari High 52 minggu
     2. RSI < 35 — oversold
     3. CMF Slope positif — arus uang mulai membalik
     4. MACD divergence bullish (MACD_Slope > 0 dan Hist membaik)
     5. UD Vol Ratio >= 1.0 — pembeli tidak kalah
 
-    IMPROVEMENT 1 — StochRSI: RSI dari RSI, lebih presisi untuk oversold
-    IMPROVEMENT 2 — ADX menurun: trend melemah sebelum reversal
-    IMPROVEMENT 3 — Formal bullish divergence: harga new low tapi MACD/RSI tidak
-    IMPROVEMENT 4 — Volume konfirmasi: ada hari dengan Vol_Ratio >= 1.5 dalam 10 hari
-    IMPROVEMENT 5 — Filter likuiditas: Vol_Ratio >= 0.10 dan Close >= 50
-    IMPROVEMENT 6 — Priority Score 0-100 berbobot
+    IMPROVEMENT 1 : StochRSI < 0.20 (extreme oversold lebih presisi)
+    IMPROVEMENT 2 : ADX menurun (trend melemah sebelum reversal)
+    IMPROVEMENT 3 : Formal bullish divergence
+    IMPROVEMENT 4 : Volume konfirmasi Vol_Ratio >= 1.5 dalam 10 hari
+    IMPROVEMENT 5 : Filter likuiditas — Vol_Ratio>=0.10, Close>=50,
+                    VMA20>=10.000 lot/hari (micro-cap tidak likuid disaring)
+    IMPROVEMENT 6 : Priority Score 0-100+ berbobot
+    IMPROVEMENT 7 : Penalti RSI > 50 (tidak reliable jika tidak oversold)
+    IMPROVEMENT 8 : Handle RSI=0/NaN sebagai anomali Low Liquidity
+    IMPROVEMENT 9 : Tier lebih ketat — STRONG butuh RSI<30, WATCH butuh RSI<35 strict
 
     Return: (bool is_reversal, dict detail_sinyal)
     """
     try:
-        close    = float(row.get('Close', 0))
-        cmf_sl   = float(row.get('CMF_Slope', 0))
-        ud_vol   = float(row.get('UD_Vol_Ratio', 0))
-        macd_h   = float(row.get('MACD_Hist', 0))
-        macd_sl  = float(row.get('MACD_Slope', 0))
-        vol_ratio= float(row.get('Vol_Ratio', 0))
-        adx_val  = float(row.get('ADX', 0)) if row.get('ADX') is not None else 0.0
+        close     = float(row.get('Close', 0))
+        cmf_sl    = float(row.get('CMF_Slope', 0))
+        ud_vol    = float(row.get('UD_Vol_Ratio', 0))
+        macd_h    = float(row.get('MACD_Hist', 0))
+        macd_sl   = float(row.get('MACD_Slope', 0))
+        vol_ratio = float(row.get('Vol_Ratio', 0))
 
-        if close <= 0: return False, {}
+        if close <= 0:
+            return False, {}
 
-        # ── IMPROVEMENT 5: Filter likuiditas minimum ──────────────
-        # Mengurangi noise dari saham micro-cap tidak likuid
+        # IMPROVEMENT 5a: Filter dasar likuiditas (Vol_Ratio & harga minimum)
         if vol_ratio < 0.10 or close < 50:
             return False, {}
 
-        # ── Kriteria 1: Drawdown dari High 52 minggu ─────────────
+        # IMPROVEMENT 5b: Filter VMA20 minimum 10.000 lot/hari
+        # Menghilangkan micro-cap yang tidak bisa dimasuki dengan modal meaningful
+        if df_hist is not None and len(df_hist) >= 20:
+            try:
+                vma20_lot = float(df_hist['Volume'].rolling(20).mean().iloc[-1])
+                if vma20_lot < 10_000:
+                    return False, {}
+            except:
+                pass
+
+        # Kriteria 1: Drawdown dari High 52 minggu
         if df_hist is not None and len(df_hist) >= 60:
-            high_52w = df_hist['High'].tail(252).max() if len(df_hist) >= 252 \
-                       else df_hist['High'].max()
+            high_52w = (df_hist['High'].tail(252).max()
+                        if len(df_hist) >= 252
+                        else df_hist['High'].max())
             drawdown = (close - high_52w) / high_52w
         else:
             drawdown = 0.0
 
-        # ── Kriteria 2: RSI oversold ──────────────────────────────
-        rsi_val = float(row.get('RSI', 50)) if row.get('RSI') is not None else 50.0
+        # Kriteria 2: RSI oversold
+        # IMPROVEMENT 8: Handle RSI=0 atau NaN sebagai anomali Low Liquidity
+        # RSI=0 terjadi saat saham tidak bergerak >=14 hari (gain=loss=0)
+        # Ini bukan oversold — saham tidak aktif diperdagangkan
+        rsi_raw            = row.get('RSI', None)
+        low_liquidity_flag = False
 
-        # ── IMPROVEMENT 1: StochRSI ───────────────────────────────
-        # Hitung dari data historis jika tersedia
-        stoch_rsi = 0.5  # default netral
+        if rsi_raw is None or (isinstance(rsi_raw, float) and np.isnan(rsi_raw)):
+            rsi_val            = 50.0   # anggap netral
+            low_liquidity_flag = True
+        else:
+            rsi_val = float(rsi_raw)
+            if rsi_val == 0.0:
+                rsi_val            = 50.0   # reset ke netral untuk scoring
+                low_liquidity_flag = True
+
+        # IMPROVEMENT 1: StochRSI
+        stoch_rsi = 0.5
         if df_hist is not None and len(df_hist) >= 28 and 'Close' in df_hist.columns:
             try:
-                close_s = df_hist['Close'].tail(50)
-                delta   = close_s.diff()
-                g14     = delta.where(delta > 0, 0).rolling(14).mean()
-                l14     = (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rsi_s   = 100 - (100 / (1 + g14 / l14.replace(0, 1e-9)))
-                rsi_s   = rsi_s.dropna()
+                close_s   = df_hist['Close'].tail(50)
+                delta     = close_s.diff()
+                g14       = delta.where(delta > 0, 0).rolling(14).mean()
+                l14       = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rsi_s     = 100 - (100 / (1 + g14 / l14.replace(0, 1e-9)))
+                rsi_s     = rsi_s.dropna()
                 if len(rsi_s) >= 14:
-                    rsi_min = rsi_s.rolling(14).min().iloc[-1]
-                    rsi_max = rsi_s.rolling(14).max().iloc[-1]
-                    stoch_rsi = float((rsi_s.iloc[-1] - rsi_min) / max(rsi_max - rsi_min, 1e-9))
+                    rsi_min   = rsi_s.rolling(14).min().iloc[-1]
+                    rsi_max   = rsi_s.rolling(14).max().iloc[-1]
+                    stoch_rsi = float((rsi_s.iloc[-1] - rsi_min)
+                                      / max(rsi_max - rsi_min, 1e-9))
             except:
                 stoch_rsi = 0.5
-        crit_stoch_rsi = stoch_rsi < 0.20  # extreme oversold
+        crit_stoch_rsi = stoch_rsi < 0.20
 
-        # ── IMPROVEMENT 2: ADX melemah (trend mulai habis) ────────
+        # IMPROVEMENT 2: ADX melemah
         adx_weakening = False
         if df_hist is not None and len(df_hist) >= 30:
             try:
-                hs = df_hist['High'].tail(30)
-                ls = df_hist['Low'].tail(30)
-                cs = df_hist['Close'].tail(30)
+                hs  = df_hist['High'].tail(30)
+                ls  = df_hist['Low'].tail(30)
+                cs  = df_hist['Close'].tail(30)
                 pdm = hs.diff().clip(lower=0)
                 mdm = (-ls.diff()).clip(lower=0)
                 pdm = pdm.where(pdm > mdm, 0)
                 mdm = mdm.where(mdm > pdm, 0)
-                tr  = pd.concat([hs - ls, (hs - cs.shift()).abs(), (ls - cs.shift()).abs()], axis=1).max(axis=1)
-                atr = tr.rolling(14).mean().replace(0, 1e-9)
-                pdi = 100 * pdm.rolling(14).mean() / atr
-                mdi = 100 * mdm.rolling(14).mean() / atr
-                dx  = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, 1e-9)
+                tr  = pd.concat([hs - ls,
+                                  (hs - cs.shift()).abs(),
+                                  (ls - cs.shift()).abs()],
+                                 axis=1).max(axis=1)
+                atr     = tr.rolling(14).mean().replace(0, 1e-9)
+                pdi     = 100 * pdm.rolling(14).mean() / atr
+                mdi     = 100 * mdm.rolling(14).mean() / atr
+                dx      = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, 1e-9)
                 adx_ser = dx.rolling(14).mean().dropna()
                 if len(adx_ser) >= 5:
-                    # ADX trend melemah: sekarang lebih rendah dari 5 hari lalu
                     adx_weakening = bool(adx_ser.iloc[-1] < adx_ser.iloc[-5])
             except:
                 adx_weakening = False
 
-        # ── IMPROVEMENT 3: Formal bullish divergence ──────────────
-        # Harga buat new low tapi MACD Hist atau RSI tidak buat new low
+        # IMPROVEMENT 3: Formal bullish divergence
         bullish_divergence = False
         if df_hist is not None and len(df_hist) >= 25:
             try:
-                close_20 = df_hist['Close'].tail(20)
+                close_20      = df_hist['Close'].tail(20)
                 price_new_low = float(close_20.iloc[-1]) <= float(close_20.min())
                 if price_new_low:
-                    # Cek MACD hist divergence
-                    if 'MACD' in df_hist.columns and 'MACD_Sig' in df_hist.columns:
-                        hist_20 = (df_hist['MACD'] - df_hist['MACD_Sig']).tail(20)
-                        macd_not_new_low = float(hist_20.iloc[-1]) > float(hist_20.min())
+                    if ('MACD' in df_hist.columns
+                            and 'MACD_Sig' in df_hist.columns):
+                        hist_20            = (df_hist['MACD']
+                                              - df_hist['MACD_Sig']).tail(20)
+                        macd_not_new_low   = (float(hist_20.iloc[-1])
+                                              > float(hist_20.min()))
                         bullish_divergence = bool(macd_not_new_low)
                     else:
-                        # Fallback: gunakan MACD_Slope > 0 dari row
                         bullish_divergence = bool(macd_sl > 0)
             except:
                 bullish_divergence = False
 
-        # ── IMPROVEMENT 4: Volume konfirmasi ─────────────────────
-        # Ada minimal 1 hari dengan Vol_Ratio >= 1.5 dalam 10 hari terakhir
+        # IMPROVEMENT 4: Volume konfirmasi dalam 10 hari
         vol_confirmed = False
         if df_hist is not None and len(df_hist) >= 15:
             try:
-                vol_10 = df_hist['Volume'].tail(10)
-                vma20  = df_hist['Volume'].rolling(20).mean().tail(10)
-                ratio  = vol_10.values / (vma20.values + 1e-9)
+                vol_10        = df_hist['Volume'].tail(10)
+                vma20         = df_hist['Volume'].rolling(20).mean().tail(10)
+                ratio         = vol_10.values / (vma20.values + 1e-9)
                 vol_confirmed = bool(np.any(ratio >= 1.5))
             except:
                 vol_confirmed = False
 
-        # ── Evaluasi 5 kriteria original ─────────────────────────
-        crit_drawdown   = drawdown <= -0.30
-        crit_rsi        = rsi_val < 35
-        crit_cmf_turn   = cmf_sl > 0
-        crit_macd_div   = macd_sl > 0 and macd_h > -0.001
-        crit_ud_vol     = ud_vol >= 1.0
+        # Evaluasi 5 kriteria original
+        crit_drawdown = drawdown <= -0.30
+        crit_rsi      = rsi_val < 35
+        crit_cmf_turn = cmf_sl > 0
+        crit_macd_div = macd_sl > 0 and macd_h > -0.001
+        crit_ud_vol   = ud_vol >= 1.0
 
-        score_rev = sum([crit_drawdown, crit_rsi, crit_cmf_turn, crit_macd_div, crit_ud_vol])
+        score_rev   = sum([crit_drawdown, crit_rsi, crit_cmf_turn,
+                           crit_macd_div, crit_ud_vol])
         is_reversal = score_rev >= 4
 
-        # ── IMPROVEMENT 6: Priority Score 0–100 ──────────────────
-        # Formula dari PDF rekomendasi, diimplementasikan langsung
-        p_score = 0.0
-        p_score += score_rev * 6                                        # 30 maks
-        p_score += max(0.0, (35.0 - rsi_val) * 1.25)                   # 25 maks
-        p_score += min(20.0, abs(drawdown) * 100 * 0.25)               # 20 maks
+        # IMPROVEMENT 6: Priority Score 0-100+
         cmf_val  = float(row.get('CMF', 0))
-        p_score += 15.0 if cmf_val > 0.3 else (10.0 if cmf_val > 0 else 5.0)  # 15 maks
-        p_score += min(10.0, ud_vol * 2.0)                             # 10 maks
-        # ── Penalti RSI tinggi: sinyal reversal tidak reliable jika tidak oversold ─
-        if rsi_val > 50:
-            p_score -= (rsi_val - 50) * 0.5  # RSI 70 = -10 poin, RSI 85 = -17.5 poin
-        # Bonus dari improvements
-        if crit_stoch_rsi:   p_score += 5.0   # StochRSI extreme oversold
-        if adx_weakening:    p_score += 3.0   # Trend melemah
-        if bullish_divergence: p_score += 5.0 # Divergence formal
-        if vol_confirmed:    p_score += 3.0   # Volume konfirmasi
+        p_score  = 0.0
+        p_score += score_rev * 6                                   # 30 maks
+        p_score += max(0.0, (35.0 - rsi_val) * 1.25)              # 25 maks
+        p_score += min(20.0, abs(drawdown) * 100 * 0.25)          # 20 maks
+        p_score += (15.0 if cmf_val > 0.3
+                    else (10.0 if cmf_val > 0 else 5.0))          # 15 maks
+        p_score += min(10.0, ud_vol * 2.0)                        # 10 maks
 
-        # ── Tier label (setara Live Screener) ─────────────────────
-        if   score_rev == 5 and rsi_val < 30 and ud_vol >= 1.5:
-            rev_tier = 'STRONG REVERSAL'    # setara Accum Buy
-        elif score_rev >= 4 and rsi_val < 35 and cmf_sl > 0:
-            rev_tier = 'REVERSAL WATCH'     # setara Stealth Buy
+        # IMPROVEMENT 7: Penalti RSI > 50
+        if rsi_val > 50:
+            p_score -= (rsi_val - 50) * 0.5   # RSI 70=-10, RSI 85=-17.5
+
+        # Bonus improvements
+        if crit_stoch_rsi:     p_score += 5.0
+        if adx_weakening:      p_score += 3.0
+        if bullish_divergence: p_score += 5.0
+        if vol_confirmed:      p_score += 3.0
+
+        # IMPROVEMENT 8: Penalti Low Liquidity (RSI=0 anomali)
+        if low_liquidity_flag:
+            p_score -= 20.0
+
+        # IMPROVEMENT 9: Tier lebih ketat
+        # STRONG   : score=5 + RSI<30 + UD_Vol>=1.5 + bukan anomali likuiditas
+        # WATCH    : score>=4 + RSI wajib<35 (strict) + CMF slope positif
+        # PANTAU   : lolos filter tapi belum memenuhi kriteria Watch/Strong
+        if (score_rev == 5
+                and rsi_val < 30
+                and ud_vol >= 1.5
+                and not low_liquidity_flag):
+            rev_tier = 'STRONG REVERSAL'
+
+        elif (score_rev >= 4
+              and crit_rsi          # RSI<35 wajib, bukan sekadar opsional
+              and cmf_sl > 0
+              and not low_liquidity_flag):
+            rev_tier = 'REVERSAL WATCH'
+
         else:
-            rev_tier = 'PANTAU REVERSAL'    # setara Pantau
+            rev_tier = 'PANTAU REVERSAL'
 
         detail = {
-            'Rev_Drawdown_pct': round(drawdown * 100, 1),
-            'Rev_RSI':          round(rsi_val, 1),
-            'Rev_CMF_Slope':    round(cmf_sl, 4),
-            'Rev_MACD_Div':     crit_macd_div,
-            'Rev_UD_Vol':       round(ud_vol, 2),
-            'Rev_Score':        score_rev,
-            'Rev_Priority':     round(p_score, 1),
-            'Rev_Tier':         rev_tier,
-            'Rev_StochRSI':     round(stoch_rsi, 3),
-            'Rev_ADX_Weak':     adx_weakening,
-            'Rev_Divergence':   bullish_divergence,
-            'Rev_Vol_Confirm':  vol_confirmed,
+            'Rev_Drawdown_pct':  round(drawdown * 100, 1),
+            'Rev_RSI':           round(rsi_val, 1),
+            'Rev_CMF_Slope':     round(cmf_sl, 4),
+            'Rev_MACD_Div':      crit_macd_div,
+            'Rev_UD_Vol':        round(ud_vol, 2),
+            'Rev_Score':         score_rev,
+            'Rev_Priority':      round(p_score, 1),
+            'Rev_Tier':          rev_tier,
+            'Rev_StochRSI':      round(stoch_rsi, 3),
+            'Rev_ADX_Weak':      adx_weakening,
+            'Rev_Divergence':    bullish_divergence,
+            'Rev_Vol_Confirm':   vol_confirmed,
+            'Rev_Low_Liquidity': low_liquidity_flag,
         }
         return is_reversal, detail
     except:
         return False, {}
+
 
 
 # ── DETECTOR: ANTI-TRAP ALERT FLAGS ──────────────────────────────
@@ -849,6 +897,9 @@ df_latest_global['Rev_Divergence']= df_latest_global['Ticker'].map(
 df_latest_global['Rev_VolConfirm']= df_latest_global['Ticker'].map(
     lambda t: reversal_details.get(t, {}).get('Rev_Vol_Confirm', False)
 )
+df_latest_global['Rev_Low_Liquidity'] = df_latest_global['Ticker'].map(
+    lambda t: reversal_details.get(t, {}).get('Rev_Low_Liquidity', False)
+)
 n_reversal = int(df_latest_global['Is_Reversal'].sum())
 n_strong   = int((df_latest_global['Rev_Tier'] == 'STRONG REVERSAL').sum())
 n_watch    = int((df_latest_global['Rev_Tier'] == 'REVERSAL WATCH').sum())
@@ -906,6 +957,7 @@ cols_final = [
     'Alert_Flag', 'Analisis_Kesimpulan', 'Rekomendasi_Action',
     'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
     'Rev_Priority', 'Rev_Tier', 'Rev_StochRSI', 'Rev_Divergence', 'Rev_VolConfirm',
+    'Rev_Low_Liquidity',
     # ── B1/B2/B3 ─────────────────────────────────────────────────
     'Profit_Target',    # B1: target profit dinamis (Rp)
     'CVI_Tier',         # B2: 'Tinggi' / 'Sedang' / 'Rendah'
@@ -924,6 +976,7 @@ df_all_export = df_latest_global[[
     'Alert_Flag', 'Analisis_Kesimpulan_raw', 'Rekomendasi_Action_raw',
     'Is_Reversal', 'Rev_Score', 'Rev_Drawdown', 'Rev_RSI',
     'Rev_Priority', 'Rev_Tier', 'Rev_StochRSI', 'Rev_Divergence', 'Rev_VolConfirm',
+    'Rev_Low_Liquidity',
     'Profit_Target', 'CVI_Tier', 'Conf_Score', 'ADX',
 ]].copy()
 df_all_export.columns = cols_final
@@ -1036,6 +1089,7 @@ if not dragon_candidates.empty:
                                          'Rev_Score','Rev_Priority','Rev_Tier',
                                          'Rev_Drawdown','Rev_RSI','Rev_StochRSI',
                                          'Rev_Divergence','Rev_VolConfirm',
+                                         'Rev_Low_Liquidity',
                                          'Support','Resistance']
                             if c in reversal_candidates.columns]
                 rev_export = reversal_candidates[rev_cols].copy()
