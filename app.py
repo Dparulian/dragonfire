@@ -1374,6 +1374,19 @@ with tab6:
   except Exception as _he:
       _hist_error = str(_he)
 
+  # ── DEBUG SEMENTARA — hapus setelah masalah resolved ──────────
+  with st.expander("🔧 Debug Info (hapus setelah fix)", expanded=True):
+      st.write(f"**Shape raw:** {df_hist_tab.shape}")
+      st.write(f"**Error:** {_hist_error}")
+      if not df_hist_tab.empty:
+          st.write(f"**Kolom raw (sebelum normalize):** {df_hist_tab.columns.tolist()}")
+          # Cari kolom yang mengandung 'tanggal'
+          tgl_cols = [c for c in df_hist_tab.columns if 'tanggal' in str(c).lower()]
+          st.write(f"**Kolom mengandung 'tanggal':** {tgl_cols}")
+          # Sample 3 baris
+          st.write("**Sample 3 baris:**")
+          st.dataframe(df_hist_tab.head(3))
+
   # ── Normalkan nama kolom ───────────────────────────────────────
   if not df_hist_tab.empty:
       # 1. Lowercase semua kolom
