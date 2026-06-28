@@ -398,6 +398,9 @@ def detect_reversal(row, df_hist):
         cmf_val  = float(row.get('CMF', 0))
         p_score += 15.0 if cmf_val > 0.3 else (10.0 if cmf_val > 0 else 5.0)  # 15 maks
         p_score += min(10.0, ud_vol * 2.0)                             # 10 maks
+        # ── Penalti RSI tinggi: sinyal reversal tidak reliable jika tidak oversold ─
+        if rsi_val > 50:
+            p_score -= (rsi_val - 50) * 0.5  # RSI 70 = -10 poin, RSI 85 = -17.5 poin
         # Bonus dari improvements
         if crit_stoch_rsi:   p_score += 5.0   # StochRSI extreme oversold
         if adx_weakening:    p_score += 3.0   # Trend melemah
