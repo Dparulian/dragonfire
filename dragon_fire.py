@@ -750,7 +750,7 @@ if not dragon_candidates.empty:
             print(f"\n🚀 DATABASE SUCCESS:")
             print(f"   → screener_live   : {len(df_excel_simple)} baris")
             print(f"   → all_stocks_live : {len(df_all_export)} baris")
-            print(f"   → screener_history: +{len(df_histori)} baris ({today_wib_str()})")
+            print(f"   → screener_history: {today_wib_str()} (lihat log di atas)")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
 
@@ -780,7 +780,7 @@ else:
         try:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             save_screener_history(df_all_export, db_engine, today_wib_str())
-            print(f"🚀 Master DB diupdate. screener_history: +{len(df_histori)} baris ({today_wib_str()})")
+            print(f"🚀 Master DB diupdate. screener_history: {today_wib_str()} (lihat log)")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
 
