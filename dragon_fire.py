@@ -1084,23 +1084,23 @@ if not dragon_candidates.empty:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             # Simpan reversal candidates ke tabel tersendiri
             if not reversal_candidates.empty:
-                rev_cols = [c for c in ['Ticker','Close','BB_Width_Str','Vol_Ratio',
-                                         'CMF','UD_Vol_Ratio','MACD','MACD_Slope',
-                                         'Rev_Score','Rev_Priority','Rev_Tier',
-                                         'Rev_Drawdown','Rev_RSI','Rev_StochRSI',
-                                         'Rev_Divergence','Rev_VolConfirm',
-                                         'Rev_Low_Liquidity',
-                                         'Support','Resistance']
-                            if c in reversal_candidates.columns]
+                # Kolom untuk reversal_live — termasuk semua yang ditampilkan
+                # di dashboard dan Excel download agar tidak ada kolom kosong
+                rev_cols = [c for c in [
+                    'Ticker', 'Close', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity',
+                    'CMF', 'UD_Vol_Ratio', 'MACD', 'MACD_Slope', 'MACD_PreCross',
+                    'ADX', 'CVI', 'CVI_Tier', 'Conf_Score', 'Profit_Target',
+                    'Rekomendasi_Action', 'Analisis_Kesimpulan', 'Alert_Flag',
+                    'Rev_Score', 'Rev_Priority', 'Rev_Tier',
+                    'Rev_Drawdown', 'Rev_RSI', 'Rev_StochRSI',
+                    'Rev_Divergence', 'Rev_VolConfirm', 'Rev_ADX_Weak',
+                    'Rev_Low_Liquidity',
+                    'Support', 'Resistance',
+                ] if c in reversal_candidates.columns]
                 rev_export = reversal_candidates[rev_cols].copy()
                 rev_export.to_sql('reversal_live', db_engine, if_exists='replace', index=False)
 
             # ── screener_history: schema-safe append ──────────────
-            # FIX: if_exists='append' gagal diam-diam ketika skema tabel di Supabase
-            # tidak cocok dengan DataFrame (misal: kolom MACD/Alert_Flag belum ada
-            # di tabel lama yang dibuat sebelum kolom ini ditambahkan).
-            # Solusi: cek skema tabel dulu, jika berbeda hapus & buat ulang,
-            # lalu delete baris hari ini (idempotent) sebelum insert baru.
             df_histori = df_all_export.copy()
             df_histori['Tanggal_Scan'] = today_wib_str()
 
@@ -1117,8 +1117,8 @@ if not dragon_candidates.empty:
                         "SELECT column_name FROM information_schema.columns "
                         "WHERE table_name = 'screener_history'"
                     )).fetchall())
-                    needed_cols   = set(c.lower() for c in df_histori.columns)
-                    missing_cols  = needed_cols - existing_cols
+                    needed_cols  = set(c.lower() for c in df_histori.columns)
+                    missing_cols = needed_cols - existing_cols
 
                     if missing_cols:
                         # Skema berubah: TAMBAH kolom baru via ALTER TABLE
@@ -1128,26 +1128,29 @@ if not dragon_candidates.empty:
                         for col in missing_cols:
                             try:
                                 conn.execute(text(
-                                    f'ALTER TABLE "screener_history" ADD COLUMN IF NOT EXISTS "{col}" TEXT'
+                                    f'ALTER TABLE "screener_history" '
+                                    f'ADD COLUMN IF NOT EXISTS "{col}" TEXT'
                                 ))
                             except Exception as alter_err:
                                 print(f"   ⚠️  Tidak bisa ALTER kolom {col}: {alter_err}")
                         conn.commit()
+                        print(f"   ✅ ALTER TABLE selesai — melanjutkan DELETE+INSERT.")
 
-                    else:
-                        # Skema cocok: hapus baris hari ini dulu (idempotent)
-                        # agar tidak ada duplikat jika workflow dijalankan 2x
-                        tanggal_hari_ini = today_wib_str()
-                        deleted = conn.execute(text(
-                            "DELETE FROM screener_history "
-                            "WHERE \"Tanggal_Scan\" = :tgl"
-                        ), {"tgl": tanggal_hari_ini}).rowcount
-                        conn.commit()
-                        if deleted > 0:
-                            print(f"🔄 screener_history: {deleted} baris lama "
-                                  f"{tanggal_hari_ini} dihapus sebelum insert baru.")
+                    # DELETE baris hari ini (idempotent) — SELALU dijalankan
+                    # baik setelah ALTER maupun saat skema sudah cocok.
+                    # Bug lama: DELETE hanya ada di branch 'else' sehingga saat
+                    # pertama kali ada kolom baru, data hari itu tidak masuk.
+                    tanggal_hari_ini = today_wib_str()
+                    deleted = conn.execute(text(
+                        'DELETE FROM screener_history '
+                        'WHERE "Tanggal_Scan" = :tgl'
+                    ), {"tgl": tanggal_hari_ini}).rowcount
+                    conn.commit()
+                    if deleted > 0:
+                        print(f"🔄 screener_history: {deleted} baris lama "
+                              f"{tanggal_hari_ini} dihapus sebelum insert baru.")
 
-            # 3. Insert (tabel baru jika baru saja di-drop, atau append bersih)
+            # 3. Insert — selalu append (idempotent karena sudah DELETE dulu)
             df_histori.to_sql('screener_history', db_engine,
                               if_exists='append', index=False)
 
