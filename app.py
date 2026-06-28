@@ -1371,11 +1371,7 @@ with tab6:
   # otomatis. Query langsung memastikan data hari ini selalu tampil.
   df_hist_tab = pd.DataFrame()  # default kosong
   try:
-      if IS_CLOUD:
-          _hist_engine = create_engine(DATABASE_URL)
-          df_hist_tab  = pd.read_sql('SELECT * FROM "screener_history"', _hist_engine)
-      else:
-          df_hist_tab  = df_history.copy()
+      df_hist_tab = pd.read_sql('SELECT * FROM "screener_history"', engine)
       # Lowercase semua kolom — handle mixed-case dari versi DB lama
       df_hist_tab.columns = [c.lower().strip() for c in df_hist_tab.columns]
       # Rename tanggal_scan → Tanggal_Scan
