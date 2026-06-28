@@ -1373,8 +1373,18 @@ with tab6:
                   'Jalankan dragon_fire.py dan klik Refresh Histori.</div>',
                   unsafe_allow_html=True)
   else:
-      # Pastikan Tanggal_Scan adalah string bersih (bukan Timestamp)
-      df_history['Tanggal_Scan'] = df_history['Tanggal_Scan'].astype(str).str[:10]
+      # Bersihkan Tanggal_Scan: konversi semua nilai ke string YYYY-MM-DD
+      # Menangani campuran Timestamp, NaT, string panjang, dan None
+      def clean_tgl(v):
+          if v is None: return None
+          s = str(v).strip()
+          if s in ('nan','NaT','None',''): return None
+          return s[:10]   # ambil 10 karakter pertama = YYYY-MM-DD
+
+      df_history = df_history.copy()
+      df_history['Tanggal_Scan'] = df_history['Tanggal_Scan'].apply(clean_tgl)
+      df_history = df_history.dropna(subset=['Tanggal_Scan'])
+
       avail = sorted(df_history['Tanggal_Scan'].unique().tolist(), reverse=True)
       hc1, hc2 = st.columns([3, 2])
       with hc1:
