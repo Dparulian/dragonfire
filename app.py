@@ -1366,46 +1366,17 @@ with tab6:
       st.cache_data.clear()
       st.rerun()
 
-  # ── Fetch dari DB — gabung dua kolom tanggal via SQL COALESCE ──
-  # DB punya dua kolom tanggal: "Tanggal_Scan" (data lama, mixed case)
-  # dan tanggal_scan (data baru, lowercase). COALESCE ambil yang tidak null.
+  # ── Fetch dari DB ───────────────────────────────────────────────
+  # Kolom "Tanggal_Scan" (mixed case lama) sudah dihapus dari Supabase.
+  # Sekarang hanya ada tanggal_scan (lowercase) dari data baru.
+  # Data 27 Juni yang lama tidak punya tanggal_scan → akan muncul sebagai NULL
+  # dan akan difilter. Data 28 Juni dan seterusnya akan tampil normal.
   df_hist_tab = pd.DataFrame()
   _hist_err   = None
-  _SQL = """
-      SELECT
-          COALESCE("Tanggal_Scan", tanggal_scan) AS tanggal_scan,
-          ticker, close, support, resistance,
-          bb_width_str, vol_ratio, vol_velocity, cmf, ud_vol_ratio,
-          hari_ke_breakout, potensial_upsize, cvi,
-          macd, macd_slope, macd_precross,
-          alert_flag, analisis_kesimpulan, rekomendasi_action,
-          cvi_tier, conf_score, profit_target, adx
-      FROM screener_history
-  """
   try:
-      df_hist_tab = pd.read_sql(_SQL, engine)
-  except Exception:
-      # Fallback: query tanpa COALESCE jika kolom lama tidak ada
-      try:
-          df_hist_tab = pd.read_sql(
-              'SELECT * FROM screener_history', engine)
-          df_hist_tab.columns = [str(c).lower().strip() for c in df_hist_tab.columns]
-          # Hapus duplikat kolom — gabung tanggal_scan secara manual
-          seen = {}
-          new_cols, keep = [], []
-          for i, c in enumerate(df_hist_tab.columns):
-              if c not in seen:
-                  seen[c] = i; new_cols.append(c); keep.append(i)
-              elif c == 'tanggal_scan':
-                  # Merge: fillna dengan kolom kedua
-                  df_hist_tab.iloc[:, seen[c]] = (
-                      df_hist_tab.iloc[:, seen[c]]
-                      .fillna(df_hist_tab.iloc[:, i])
-                  )
-          df_hist_tab = df_hist_tab.iloc[:, keep]
-          df_hist_tab.columns = new_cols
-      except Exception as _he:
-          _hist_err = str(_he)
+      df_hist_tab = pd.read_sql('SELECT * FROM screener_history', engine)
+  except Exception as _he:
+      _hist_err = str(_he)
 
   if df_hist_tab.empty and _hist_err:
       st.warning(f"⚠️ DB error: {_hist_err}. Pakai cache lokal.")
