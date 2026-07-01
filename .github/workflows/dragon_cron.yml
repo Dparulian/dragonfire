@@ -4,8 +4,8 @@ on:
   workflow_dispatch:   # Jalankan manual dari tab Actions GitHub
 
   schedule:
-    # Senin–Jumat pukul 18:00 WIB (= 11:00 UTC)
-    - cron: '0 11 * * 1-5'
+    # Senin–Jumat pukul 17:45 WIB (= 10:45 UTC) — jadwal lebih sepi dari jam bulat
+    - cron: '45 10 * * 1-5'
 
 jobs:
   dragon-fire:
