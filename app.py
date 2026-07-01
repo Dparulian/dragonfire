@@ -225,7 +225,15 @@ def normalize_columns(df):
     if 'Conf_Score' in df.columns:
         df['Conf_Score'] = pd.to_numeric(df['Conf_Score'], errors='coerce').fillna(0).astype(int)
     if 'Profit_Target' in df.columns:
-        df['Profit_Target'] = pd.to_numeric(df['Profit_Target'], errors='coerce').fillna(0).astype(int)
+        df['Profit_Target'] = pd.to_numeric(df['Profit_Target'], errors='coerce').fillna(0)
+        # Simpan nilai persen asli
+        df['Profit_Target_Pct'] = df['Profit_Target'].round(1)
+        # Hitung harga target Rupiah: Close * (1 + PT/100)
+        if 'Close' in df.columns:
+            df['Profit_Target'] = (
+                pd.to_numeric(df['Close'], errors='coerce').fillna(0) *
+                (1 + df['Profit_Target_Pct'] / 100)
+            ).round(0).astype(int)
     if 'ADX' in df.columns:
         df['ADX'] = pd.to_numeric(df['ADX'], errors='coerce').fillna(0)
     if 'MACD_PreCross' in df.columns:
@@ -748,7 +756,7 @@ with tab1:
               "CVI":            st.column_config.NumberColumn("CVI", format="%.2f"),
               "CVI_Tier":       st.column_config.TextColumn("CVI Tier", width=80),
               "Conf_Score":     st.column_config.ProgressColumn("⭐ Conf", min_value=0, max_value=5, format="%.0f"),
-              "Profit_Target":  st.column_config.NumberColumn("Target Profit", format="Rp %,.0f"),
+              "Profit_Target":  st.column_config.NumberColumn("🎯 Target Harga", format="Rp %,.0f"),
               "Vol_Ratio":      st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
               "MACD_PreCross":  st.column_config.CheckboxColumn("⚡ MACD"),
               "Alert_Flag":     st.column_config.TextColumn("🚨 Alert", width=120),
@@ -1340,7 +1348,7 @@ with tab5:
             <div class="dc"><div class="k">MACD Slope</div><div class="v">{fmt_val(row.get('MACD_Slope'))}</div><div class="h">Arah 3 hari</div></div>
               <div class="dc"><div class="k">⭐ Conf Score</div><div class="v" style="color:{'var(--green)' if int(row.get('Conf_Score',0) or 0)>=4 else 'var(--amber)' if int(row.get('Conf_Score',0) or 0)==3 else 'var(--text)'}">{fmt_val(row.get('Conf_Score','—'))}/5</div><div class="h">Konfluensi indikator</div></div>
               <div class="dc"><div class="k">CVI Tier</div><div class="v" style="color:{'var(--green)' if str(row.get('CVI_Tier',''))=='Tinggi' else 'var(--amber)' if str(row.get('CVI_Tier',''))=='Sedang' else 'var(--text)'}">{fmt_val(row.get('CVI_Tier','—'))}</div><div class="h">Efisiensi modal</div></div>
-              <div class="dc"><div class="k">💰 Target Profit</div><div class="v" style="color:var(--green)">{fmt_price(row.get('Profit_Target'))}</div><div class="h">Dinamis (75% pred ML)</div></div>
+              <div class="dc"><div class="k">💰 Target Harga</div><div class="v" style="color:var(--green)">{fmt_price(row.get('Profit_Target'))}</div><div class="h">{fmt_val(row.get('Profit_Target_Pct','—'))}% dari Close · 75% pred ML</div></div>
               <div class="dc"><div class="k">ADX</div><div class="v" style="color:{'var(--green)' if float(row.get('ADX',0) or 0)>=25 else 'var(--text)'}">{fmt_val(row.get('ADX','—'))}</div><div class="h">{'Trend kuat' if float(row.get('ADX',0) or 0)>=25 else 'Sideways/lemah'}</div></div>
           </div>""", unsafe_allow_html=True)
 
