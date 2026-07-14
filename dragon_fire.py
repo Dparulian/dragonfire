@@ -148,6 +148,58 @@ def save_screener_history(df_all_export, db_engine, today_str):
         return False
 
 
+def save_snapshot_history(df_export, table_name, db_engine, today_str):
+    """
+    Simpan snapshot harian ke tabel histori apapun (generic).
+    Dipakai untuk: reversal_history, breakout_history.
+    Kolom otomatis lowercase, ALTER TABLE jika ada kolom baru,
+    DELETE hari ini sebelum INSERT (idempotent).
+    """
+    try:
+        df_h = df_export.copy()
+        df_h.columns         = [c.lower() for c in df_h.columns]
+        df_h['tanggal_scan'] = today_str
+
+        with db_engine.connect() as conn:
+            tbl_ok = conn.execute(text(
+                f"SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                f"WHERE table_schema='public' AND table_name='{table_name}')"
+            )).scalar()
+
+            if tbl_ok:
+                exist_cols = set(
+                    r[0].lower() for r in conn.execute(text(
+                        f"SELECT column_name FROM information_schema.columns "
+                        f"WHERE table_schema='public' AND table_name='{table_name}'"
+                    )).fetchall()
+                )
+                for col in sorted(set(df_h.columns) - exist_cols):
+                    try:
+                        conn.execute(text(
+                            f'ALTER TABLE "{table_name}" '
+                            f'ADD COLUMN IF NOT EXISTS {col} TEXT'
+                        ))
+                    except Exception:
+                        pass
+                conn.commit()
+
+                res = conn.execute(text(
+                    f'DELETE FROM "{table_name}" WHERE tanggal_scan = :tgl'
+                ), {"tgl": today_str})
+                conn.commit()
+                if res.rowcount:
+                    print(f"   Hapus {res.rowcount} baris lama {today_str} dari {table_name}.")
+
+        df_h.to_sql(table_name, db_engine, if_exists='append', index=False)
+        print(f"   {table_name}: +{len(df_h)} baris ({today_str}) OK")
+        return True
+    except Exception as e:
+        import traceback
+        print(f"{table_name} ERROR: {e}")
+        traceback.print_exc()
+        return False
+
+
 if IS_CLOUD:
     try:
         db_engine = create_engine(DATABASE_URL)
@@ -425,7 +477,114 @@ def detect_reversal(row, df_hist):
     except:
         return False, {}
 
-def compute_alert_flags(df_latest, dict_df_full):
+def detect_early_breakout(row, df_hist):
+    """
+    Early Breakout Detector — menangkap saham yang baru keluar dari fase
+    akumulasi menuju fase ekspansi, SEBELUM menjadi top gainer.
+
+    Berbeda dari Dragon Fire screener utama (yang mencari squeeze/akumulasi)
+    dan Reversal Watch (yang mencari pembalikan setelah crash):
+    Early Breakout mencari saham yang BB-nya BARU MULAI EXPAND dari squeeze,
+    dengan volume dan momentum yang mulai mengkonfirmasi.
+
+    Kriteria wajib (5 dari 6 harus terpenuhi):
+    1. BB Width 15-40%  — sudah keluar dari squeeze tapi belum terlambat
+    2. Vol_Velocity >= 1.3  — volume sedang warming up aktif
+    3. Vol_Ratio >= 1.2  — hari ini di atas rata-rata
+    4. CMF > 0  — arus uang masuk (bukan distribusi)
+    5. UD_Vol >= 1.8  — pembeli mulai dominan jelas
+    6. Close mendekati Resistance (Box_Position >= 0.70)  — harga menuju atap
+
+    Scoring:
+    - Base: jumlah kriteria × 15 (maks 90)
+    - Bonus Vol_Velocity >= 2.0: +10
+    - Bonus CMF >= 0.15: +10
+    - Bonus BB baru expand (5d lalu < 15%, sekarang 15-35%): +15
+    - Bonus MACD Pre-Cross aktif: +10
+    - Bonus UD_Vol >= 3.0: +5
+    """
+    try:
+        close     = float(row.get('Close', 0))
+        bb_pct    = float(str(row.get('BB_Width_Str', '100%')).replace('%',''))
+        vol_ratio = float(row.get('Vol_Ratio', 0))
+        vol_vel   = float(row.get('Vol_Velocity', 0))
+        cmf       = float(row.get('CMF', 0))
+        ud_vol    = float(row.get('UD_Vol_Ratio', 0))
+        macd_pre  = bool(row.get('MACD_PreCross', False))
+
+        if close <= 0: return False, {}
+
+        # Hitung Box_Position: posisi harga antara Support dan Resistance
+        try:
+            supp = float(row.get('Support_raw', 0) or row.get('Support', 0))
+            resi = float(row.get('Resistance_raw', 0) or row.get('Resistance', 0))
+            box_pos = (close - supp) / (resi - supp) if (resi - supp) > 0 else 0.5
+        except:
+            box_pos = 0.5
+
+        # 6 kriteria wajib
+        c1 = 15.0 <= bb_pct <= 40.0      # BB dalam zona ekspansi awal
+        c2 = vol_vel >= 1.3               # volume warming up
+        c3 = vol_ratio >= 1.2             # hari ini di atas rata-rata
+        c4 = cmf > 0                      # arus uang positif
+        c5 = ud_vol >= 1.8                # pembeli dominan
+        c6 = box_pos >= 0.70              # harga mendekati resistance
+
+        score_eb = sum([c1, c2, c3, c4, c5, c6])
+        is_early_breakout = score_eb >= 5  # minimal 5 dari 6
+
+        # Scoring 0-100+
+        eb_score = score_eb * 15.0
+
+        # Bonus
+        if vol_vel >= 2.0:    eb_score += 10.0
+        if cmf >= 0.15:       eb_score += 10.0
+        if macd_pre:          eb_score += 10.0
+        if ud_vol >= 3.0:     eb_score += 5.0
+
+        # Bonus spesial: BB baru expand dari squeeze (5 hari lalu BB < 15%)
+        bb_fresh_expand = False
+        if df_hist is not None and len(df_hist) >= 10 and 'Close' in df_hist.columns:
+            try:
+                close_5d   = df_hist['Close'].tail(25)
+                ma20       = close_5d.rolling(20).mean()
+                std20      = close_5d.rolling(20).std()
+                bb_up_5d   = ma20 + 2 * std20
+                bb_lo_5d   = ma20 - 2 * std20
+                bb_pct_5d  = ((bb_up_5d - bb_lo_5d) / ma20.replace(0, 1e-9) * 100).iloc[-6]
+                if bb_pct_5d < 15.0:
+                    bb_fresh_expand = True
+                    eb_score += 15.0   # bonus terbesar — ini adalah deteksi paling dini
+            except:
+                pass
+
+        # Tier label
+        if eb_score >= 90:
+            eb_tier = 'BREAKOUT IMMINENT'      # akan breakout sangat segera
+        elif eb_score >= 70:
+            eb_tier = 'EARLY BREAKOUT'         # sinyal kuat
+        else:
+            eb_tier = 'BREAKOUT WATCH'         # pantau, belum semua kriteria
+
+        detail = {
+            'EB_Score':       score_eb,
+            'EB_Priority':    round(eb_score, 1),
+            'EB_Tier':        eb_tier,
+            'EB_BB_Pct':      round(bb_pct, 1),
+            'EB_Vol_Velocity': round(vol_vel, 2),
+            'EB_Vol_Ratio':   round(vol_ratio, 2),
+            'EB_CMF':         round(cmf, 3),
+            'EB_UD_Vol':      round(ud_vol, 2),
+            'EB_Box_Pos':     round(box_pos, 2),
+            'EB_FreshExpand': bb_fresh_expand,
+            'EB_MACD_Pre':    macd_pre,
+        }
+        return is_early_breakout, detail
+    except:
+        return False, {}
+
+
+
     """
     Hitung 3 alert anti-trap untuk setiap ticker:
     1. CMF Velocity Alert: CMF turun >0.15 dalam 3 hari
@@ -859,6 +1018,47 @@ reversal_candidates['BB_Width_Str'] = (
 n_rev_cand = len(reversal_candidates)
 print(f"🔄 Reversal candidates: {n_rev_cand} emiten masuk daftar pantau reversal")
 
+# ── Early Breakout Detector ───────────────────────────────────────
+print("⚡ Mendeteksi sinyal early breakout (fase ekspansi awal)...")
+eb_details = {}
+for t in df_latest_global['Ticker']:
+    row_eb   = df_latest_global[df_latest_global['Ticker'] == t].iloc[0]
+    df_h_eb  = dict_df_full.get(f"{t}.JK")
+    is_eb, det_eb = detect_early_breakout(row_eb, df_h_eb)
+    if is_eb:
+        eb_details[t] = det_eb
+
+# Map ke df_latest_global
+df_latest_global['Is_EarlyBreakout'] = df_latest_global['Ticker'].map(
+    lambda t: t in eb_details
+)
+df_latest_global['EB_Score']     = df_latest_global['Ticker'].map(
+    lambda t: eb_details.get(t, {}).get('EB_Score', 0)
+)
+df_latest_global['EB_Priority']  = df_latest_global['Ticker'].map(
+    lambda t: eb_details.get(t, {}).get('EB_Priority', 0.0)
+)
+df_latest_global['EB_Tier']      = df_latest_global['Ticker'].map(
+    lambda t: eb_details.get(t, {}).get('EB_Tier', '')
+)
+df_latest_global['EB_FreshExpand'] = df_latest_global['Ticker'].map(
+    lambda t: eb_details.get(t, {}).get('EB_FreshExpand', False)
+)
+
+# Early Breakout candidates — pisahkan dari screener utama dan reversal
+# Boleh overlap dengan screener utama (BB 15-40%) tapi fokus beda
+eb_candidates = df_latest_global[
+    df_latest_global['Is_EarlyBreakout'] == True
+].copy()
+eb_candidates['BB_Width_Str'] = (
+    eb_candidates['BB_Width'] * 100
+).round(2).astype(str) + '%'
+eb_candidates = eb_candidates.sort_values('EB_Priority', ascending=False)
+n_eb = len(eb_candidates)
+print(f"⚡ Early Breakout candidates: {n_eb} emiten terdeteksi")
+
+
+
 # Screener: filter original + filter likuiditas anti-anomali (BKDP fix)
 dragon_candidates = df_latest_global[
     (df_latest_global['BB_Width']     <= BB_WIDTH_MAX) &
@@ -924,18 +1124,61 @@ if not dragon_candidates.empty:
                 rev_export = reversal_candidates[rev_cols].copy()
                 rev_export.to_sql('reversal_live', db_engine, if_exists='replace', index=False)
 
-            # ── screener_history: schema-safe append ──────────────
-            # FIX: if_exists='append' gagal diam-diam ketika skema tabel di Supabase
-            # tidak cocok dengan DataFrame (misal: kolom MACD/Alert_Flag belum ada
-            # di tabel lama yang dibuat sebelum kolom ini ditambahkan).
-            # Solusi: cek skema tabel dulu, jika berbeda hapus & buat ulang,
-            # lalu delete baris hari ini (idempotent) sebelum insert baru.
+            # ── early_breakout_live: simpan ke tabel tersendiri ───
+            if not eb_candidates.empty:
+                eb_cols = [c for c in [
+                    'Ticker', 'Close', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity',
+                    'CMF', 'UD_Vol_Ratio', 'MACD', 'MACD_Slope', 'MACD_PreCross',
+                    'ADX', 'CVI', 'CVI_Tier', 'Conf_Score',
+                    'Rekomendasi_Action', 'Alert_Flag',
+                    'EB_Score', 'EB_Priority', 'EB_Tier',
+                    'EB_FreshExpand', 'Support', 'Resistance',
+                ] if c in eb_candidates.columns]
+                eb_export = eb_candidates[eb_cols].copy()
+                eb_export.to_sql('early_breakout_live', db_engine,
+                                 if_exists='replace', index=False)
+
+            # ── screener_history: snapshot harian master ──────────
             save_screener_history(df_all_export, db_engine, today_wib_str())
 
+            # ── reversal_history: snapshot harian reversal ────────
+            if not reversal_candidates.empty:
+                rev_hist_cols = [c for c in [
+                    'Ticker', 'Close', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity',
+                    'CMF', 'UD_Vol_Ratio', 'MACD', 'MACD_Slope', 'MACD_PreCross',
+                    'Rev_Score', 'Rev_Priority', 'Rev_Tier',
+                    'Rev_Drawdown', 'Rev_RSI', 'Rev_StochRSI',
+                    'Rev_Divergence', 'Rev_VolConfirm', 'Rev_Low_Liquidity',
+                    'Support', 'Resistance',
+                ] if c in reversal_candidates.columns]
+                save_snapshot_history(
+                    reversal_candidates[rev_hist_cols],
+                    'reversal_history', db_engine, today_wib_str()
+                )
+
+            # ── breakout_history: snapshot harian early breakout ──
+            if not eb_candidates.empty:
+                eb_hist_cols = [c for c in [
+                    'Ticker', 'Close', 'BB_Width_Str', 'Vol_Ratio', 'Vol_Velocity',
+                    'CMF', 'UD_Vol_Ratio', 'MACD', 'MACD_Slope', 'MACD_PreCross',
+                    'CVI', 'CVI_Tier', 'Conf_Score',
+                    'Rekomendasi_Action', 'Alert_Flag',
+                    'EB_Score', 'EB_Priority', 'EB_Tier', 'EB_FreshExpand',
+                    'Support', 'Resistance',
+                ] if c in eb_candidates.columns]
+                save_snapshot_history(
+                    eb_candidates[eb_hist_cols],
+                    'breakout_history', db_engine, today_wib_str()
+                )
+
             print(f"\n🚀 DATABASE SUCCESS:")
-            print(f"   → screener_live   : {len(df_excel_simple)} baris")
-            print(f"   → all_stocks_live : {len(df_all_export)} baris")
-            print(f"   → screener_history: {today_wib_str()} (lihat log di atas)")
+            print(f"   → screener_live        : {len(df_excel_simple)} baris")
+            print(f"   → all_stocks_live      : {len(df_all_export)} baris")
+            print(f"   → reversal_live        : {n_rev_cand} baris")
+            print(f"   → early_breakout_live  : {n_eb} baris")
+            print(f"   → screener_history     : {today_wib_str()} OK")
+            print(f"   → reversal_history     : {today_wib_str()} OK")
+            print(f"   → breakout_history     : {today_wib_str()} OK")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
 
@@ -965,6 +1208,21 @@ else:
         try:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             save_screener_history(df_all_export, db_engine, today_wib_str())
+            if not reversal_candidates.empty:
+                save_snapshot_history(
+                    reversal_candidates[[c for c in ['Ticker','Close','Rev_Score',
+                        'Rev_Priority','Rev_Tier','Rev_Drawdown','Rev_RSI',
+                        'Support','Resistance'] if c in reversal_candidates.columns]],
+                    'reversal_history', db_engine, today_wib_str()
+                )
+            if not eb_candidates.empty:
+                save_snapshot_history(
+                    eb_candidates[[c for c in ['Ticker','Close','EB_Score',
+                        'EB_Priority','EB_Tier','EB_FreshExpand',
+                        'CMF','UD_Vol_Ratio','Support','Resistance']
+                        if c in eb_candidates.columns]],
+                    'breakout_history', db_engine, today_wib_str()
+                )
             print(f"🚀 Master DB diupdate. screener_history: {today_wib_str()} (lihat log)")
         except Exception as e:
             print(f"❌ DATABASE ERROR: {e}")
