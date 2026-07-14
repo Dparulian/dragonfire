@@ -477,6 +477,73 @@ def detect_reversal(row, df_hist):
     except:
         return False, {}
 
+def compute_alert_flags(df_latest, dict_df_full):
+    """
+    Hitung 3 alert anti-trap untuk setiap ticker:
+    1. CMF Velocity Alert: CMF turun >0.15 dalam 3 hari
+    2. Volume Spike + CMF Negatif: Vol >5x dan CMF negatif
+    3. Stagnant + Spike: harga stagnan 10 hari lalu volume meledak
+    Return: dict {ticker: alert_string}
+    """
+    alerts = {}
+    for _, row in df_latest.iterrows():
+        ticker = row.get('Ticker', '')
+        if not ticker or ticker not in dict_df_full:
+            alerts[ticker] = ''
+            continue
+
+        df_hist  = dict_df_full[ticker]
+        if len(df_hist) < PRICE_STAGNANT_DAYS + 3:
+            alerts[ticker] = ''
+            continue
+
+        flags = []
+
+        # Alert 1: CMF 3-day velocity drop
+        cmf_change = row.get('CMF_3d_Change', 0)
+        if pd.notna(cmf_change) and cmf_change < CMF_3D_DROP_THRESHOLD:
+            flags.append('CMF_DROP')
+
+        # Alert 2: Volume spike + CMF negatif
+        vol_ratio = row.get('Vol_Ratio', 0)
+        cmf_now   = row.get('CMF', 0)
+        if pd.notna(vol_ratio) and pd.notna(cmf_now):
+            if vol_ratio > VOL_SPIKE_THRESHOLD and cmf_now < -0.05:
+                flags.append('VOL_SPIKE_DIST')
+
+        # Alert 3: Harga stagnan 10 hari lalu spike
+        recent = df_hist.tail(PRICE_STAGNANT_DAYS + 1)
+        if len(recent) >= PRICE_STAGNANT_DAYS:
+            past_closes  = recent['Close'].iloc[:-1]
+            close_mean   = past_closes.mean()
+            close_std    = past_closes.std()
+            is_stagnant  = (close_std / close_mean) <= STAGNANT_RANGE_PCT if close_mean > 0 else False
+            today_vol    = recent['Volume'].iloc[-1]
+            vma20_val    = recent['Volume'].mean()
+            vol_spike_today = (today_vol / vma20_val > VOL_SPIKE_THRESHOLD) if vma20_val > 0 else False
+            cmf_neg_today   = cmf_now < -0.05 if pd.notna(cmf_now) else False
+            if is_stagnant and vol_spike_today and cmf_neg_today:
+                flags.append('STAGNANT_SPIKE')
+
+        alerts[ticker] = '|'.join(flags)
+
+    return alerts
+
+
+# ── LABEL BUILDER: tambahkan MACD PRE-CROSSOVER ke label ─────────
+def build_macd_label(base_action, is_macd_pre):
+    """
+    Jika MACD Pre-Crossover terdeteksi dan saham sudah punya label positif,
+    tambahkan suffix ⚡ MACD PRE-CROSSOVER untuk prioritas visual.
+    """
+    if not is_macd_pre:
+        return base_action
+    positive = ['ACCUMULATION BUY', 'STEALTH BUY', 'PANTAU', 'FAST TRADE']
+    if any(p in base_action for p in positive):
+        return base_action + ' ⚡ MACD PRE-CROSSOVER'
+    return base_action
+
+
 def detect_early_breakout(row, df_hist):
     """
     Early Breakout Detector — menangkap saham yang baru keluar dari fase
@@ -638,19 +705,6 @@ def detect_early_breakout(row, df_hist):
 
 
 # ── LABEL BUILDER: tambahkan MACD PRE-CROSSOVER ke label ─────────
-def build_macd_label(base_action, is_macd_pre):
-    """
-    Jika MACD Pre-Crossover terdeteksi dan saham sudah punya label positif,
-    tambahkan suffix ⚡ MACD PRE-CROSSOVER untuk prioritas visual.
-    """
-    if not is_macd_pre:
-        return base_action
-    positive = ['ACCUMULATION BUY', 'STEALTH BUY', 'PANTAU', 'FAST TRADE']
-    if any(p in base_action for p in positive):
-        return base_action + ' ⚡ MACD PRE-CROSSOVER'
-    return base_action
-
-
 def apply_historical_feedback_loop(df_train, folder_output, dict_df_full):
     report_files = glob.glob(os.path.join(folder_output, "Dragon_Screener_Master*.csv"))
     if not report_files:
