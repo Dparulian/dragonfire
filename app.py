@@ -407,6 +407,38 @@ def normalize_reversal(df):
 
 df_reversal = normalize_reversal(fetch_cloud_data('reversal_live'))
 
+def normalize_breakout(df):
+    """Normalkan kolom early_breakout_live dari DB."""
+    if df is None or df.empty: return pd.DataFrame()
+    df = df.copy()
+    df.columns = [str(c).lower().strip() for c in df.columns]
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    eb_map = {
+        'ticker':'Ticker','close':'Close','bb_width_str':'BB_Width_Str',
+        'vol_ratio':'Vol_Ratio','vol_velocity':'Vol_Velocity',
+        'cmf':'CMF','ud_vol_ratio':'UD_Vol_Ratio',
+        'macd':'MACD','macd_slope':'MACD_Slope','macd_precross':'MACD_PreCross',
+        'cvi':'CVI','cvi_tier':'CVI_Tier','conf_score':'Conf_Score',
+        'rekomendasi_action':'Rekomendasi_Action','alert_flag':'Alert_Flag',
+        'eb_score':'EB_Score','eb_priority':'EB_Priority','eb_tier':'EB_Tier',
+        'eb_freshexpand':'EB_FreshExpand',
+        'support':'Support','resistance':'Resistance',
+    }
+    df = df.rename(columns=eb_map)
+    if 'Ticker' in df.columns:
+        df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
+    if 'Close' in df.columns:
+        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+    for col in ['EB_Score','EB_Priority']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    for col in ['EB_FreshExpand','MACD_PreCross']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.lower().isin(['true','1','yes'])
+    return df
+
+df_breakout = normalize_breakout(fetch_cloud_data('early_breakout_live'))
+
 # ══════════════════════════════════════════════════════
 # 4. HELPERS
 # ══════════════════════════════════════════════════════
@@ -574,6 +606,7 @@ n_sc    = len(df_screener)
 n_wl    = len(df_watchlist)
 n_all   = len(df_all_stocks)
 n_rev   = len(df_reversal)
+n_eb    = len(df_breakout)
 n_buy   = len(df_screener[df_screener['Rekomendasi_Action'].str.contains(
     'BUY|ACCUMULATION|NYICIL', na=False)]) if n_sc else 0
 n_macd  = int(df_screener['MACD_PreCross'].sum()) \
@@ -600,6 +633,9 @@ with cm3: st.markdown(f'<div class="mcard"><div class="lbl">⚡ MACD PreCross</d
 with cm4: st.markdown(f'<div class="mcard"><div class="lbl">🔄 Reversal Watch</div>'
     f'<div class="val" style="color:var(--amber)">{n_rev}</div>'
     f'<div class="sub">Pola pembalikan</div></div>', unsafe_allow_html=True)
+with cm5: st.markdown(f'<div class="mcard"><div class="lbl">⚡ Early Breakout</div>'
+    f'<div class="val" style="color:var(--purple, #ce93d8)">{n_eb}</div>'
+    f'<div class="sub">Fase ekspansi awal</div></div>', unsafe_allow_html=True)
 with cm5: st.markdown(f'<div class="mcard"><div class="lbl">⭐ Conf 5/5</div>'
     f'<div class="val" style="color:var(--green)">{n_conf5}</div>'
     f'<div class="sub">Konfluensi sempurna</div></div>', unsafe_allow_html=True)
@@ -657,13 +693,16 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════
 # 6. MAIN TABS
 # ══════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     '📊  LIVE SCREENER',
     '📋  WATCHLIST',
     '💼  PORTOFOLIO SAYA',
     '👁  MONITOR',
     '🔍  DIAGNOSTIK TICKER',
-    '📅  HISTORI HARIAN'
+    '📅  HISTORI HARIAN',
+    '🔄  HISTORI REVERSAL',
+    '⚡  HISTORI BREAKOUT',
+    '⚡  EARLY BREAKOUT',
 ])
 
 # TAB 1 · LIVE SCREENER
@@ -1447,3 +1486,171 @@ with tab6:
               "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
               "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
           })
+
+
+# TAB 7 · HISTORI REVERSAL
+with tab7:
+  st.markdown('<div class="slabel">🔄 Histori Reversal Watch</div>', unsafe_allow_html=True)
+  if st.button("🔄 Refresh", key="refresh_rev_hist"):
+      st.cache_data.clear(); st.rerun()
+  df_hx7 = pd.DataFrame()
+  try:
+      df_hx7 = pd.read_sql("SELECT * FROM reversal_history", engine)
+      df_hx7.columns = [str(c).lower().strip() for c in df_hx7.columns]
+      df_hx7 = df_hx7.loc[:, ~df_hx7.columns.duplicated(keep="first")]
+      if "tanggal_scan" in df_hx7.columns:
+          df_hx7 = df_hx7.rename(columns={"tanggal_scan": "Tanggal_Scan"})
+  except Exception as _ex7:
+      st.warning(f"DB error: {_ex7}")
+  if df_hx7.empty or "Tanggal_Scan" not in df_hx7.columns:
+      st.info("💡 Belum ada histori Reversal. Jalankan dragon_fire.py dulu.")
+  else:
+      df_hx7["Tanggal_Scan"] = df_hx7["Tanggal_Scan"].astype(str).str[:10]
+      df_hx7 = df_hx7[df_hx7["Tanggal_Scan"].notna() & (df_hx7["Tanggal_Scan"] != "nan")].copy()
+      avail7 = sorted(df_hx7["Tanggal_Scan"].unique().tolist(), reverse=True)
+      hx7a, hx7b = st.columns([3, 2])
+      with hx7a: sel7 = st.selectbox("📅 Pilih Tanggal:", options=avail7, key="sel_rev_hist")
+      df7 = (df_hx7[df_hx7["Tanggal_Scan"]==sel7]
+             .drop(columns=["Tanggal_Scan"],errors="ignore")
+             .reset_index(drop=True))
+      with hx7b:
+          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+          st.download_button(f"⬇️ Download {sel7} (.xlsx)",
+              data=to_excel(df7, f"Reversal_{sel7}"),
+              file_name=f"DragonFire_Reversal_{sel7}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True)
+      srch7 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KLIN, BEER ...", key="srch_rev").strip().upper()
+      if srch7:
+          tcol7 = "Ticker" if "Ticker" in df7.columns else "ticker"
+          if tcol7 in df7.columns:
+              df7 = df7[df7[tcol7].str.upper()==srch7].reset_index(drop=True)
+      st.metric("Total Kandidat", len(df7))
+      st.dataframe(df7, use_container_width=True, height=450,
+          column_config={
+              "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+          })
+
+
+# TAB 8 · HISTORI EARLY BREAKOUT
+with tab8:
+  st.markdown('<div class="slabel">⚡ Histori Early Breakout</div>', unsafe_allow_html=True)
+  if st.button("🔄 Refresh", key="refresh_eb_hist"):
+      st.cache_data.clear(); st.rerun()
+  df_hx8 = pd.DataFrame()
+  try:
+      df_hx8 = pd.read_sql("SELECT * FROM breakout_history", engine)
+      df_hx8.columns = [str(c).lower().strip() for c in df_hx8.columns]
+      df_hx8 = df_hx8.loc[:, ~df_hx8.columns.duplicated(keep="first")]
+      if "tanggal_scan" in df_hx8.columns:
+          df_hx8 = df_hx8.rename(columns={"tanggal_scan": "Tanggal_Scan"})
+  except Exception as _ex8:
+      st.warning(f"DB error: {_ex8}")
+  if df_hx8.empty or "Tanggal_Scan" not in df_hx8.columns:
+      st.info("💡 Belum ada histori Early Breakout. Jalankan dragon_fire.py dulu.")
+  else:
+      df_hx8["Tanggal_Scan"] = df_hx8["Tanggal_Scan"].astype(str).str[:10]
+      df_hx8 = df_hx8[df_hx8["Tanggal_Scan"].notna() & (df_hx8["Tanggal_Scan"] != "nan")].copy()
+      avail8 = sorted(df_hx8["Tanggal_Scan"].unique().tolist(), reverse=True)
+      hx8a, hx8b = st.columns([3, 2])
+      with hx8a: sel8 = st.selectbox("📅 Pilih Tanggal:", options=avail8, key="sel_eb_hist")
+      df8 = (df_hx8[df_hx8["Tanggal_Scan"]==sel8]
+             .drop(columns=["Tanggal_Scan"],errors="ignore")
+             .reset_index(drop=True))
+      with hx8b:
+          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+          st.download_button(f"⬇️ Download {sel8} (.xlsx)",
+              data=to_excel(df8, f"EarlyBreakout_{sel8}"),
+              file_name=f"DragonFire_EarlyBreakout_{sel8}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True)
+      srch8 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KMDS, LPGI ...", key="srch_eb").strip().upper()
+      if srch8:
+          tcol8 = "Ticker" if "Ticker" in df8.columns else "ticker"
+          if tcol8 in df8.columns:
+              df8 = df8[df8[tcol8].str.upper()==srch8].reset_index(drop=True)
+      st.metric("Total Kandidat", len(df8))
+      st.dataframe(df8, use_container_width=True, height=450,
+          column_config={
+              "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "eb_priority": st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
+          })
+
+
+# TAB 9 · EARLY BREAKOUT LIVE
+with tab9:
+  st.markdown('<div class="slabel">⚡ Early Breakout — Fase Ekspansi Awal</div>', unsafe_allow_html=True)
+  st.markdown(
+      "<div class='abox abox-warn'>⚡ Saham berikut <strong>baru keluar dari fase akumulasi</strong> "
+      "menuju fase ekspansi. BB Width mulai melebar (15-40%), volume warming up aktif, pembeli dominan. "
+      "Ini adalah deteksi <strong>10-15 hari sebelum</strong> potensi menjadi top gainer. "
+      "Entry setelah konfirmasi candle hijau + volume di atas rata-rata.</div>",
+      unsafe_allow_html=True)
+
+  if df_breakout.empty:
+      st.info("💡 Belum ada data early_breakout_live. Jalankan dragon_fire.py terbaru.")
+  else:
+      eb_show = df_breakout.sort_values("EB_Priority", ascending=False).reset_index(drop=True)
+      n_imm  = int((eb_show["EB_Tier"]=="BREAKOUT IMMINENT").sum()) if "EB_Tier" in eb_show.columns else 0
+      n_ear  = int((eb_show["EB_Tier"]=="EARLY BREAKOUT").sum()) if "EB_Tier" in eb_show.columns else 0
+      n_wat  = int((eb_show["EB_Tier"]=="BREAKOUT WATCH").sum()) if "EB_Tier" in eb_show.columns else 0
+      n_frsh = int(eb_show["EB_FreshExpand"].sum()) if "EB_FreshExpand" in eb_show.columns else 0
+
+      tier_cols = st.columns(4)
+      tier_cols[0].metric("🔴 BREAKOUT IMMINENT", n_imm)
+      tier_cols[1].metric("⚡ EARLY BREAKOUT", n_ear)
+      tier_cols[2].metric("👁 BREAKOUT WATCH", n_wat)
+      tier_cols[3].metric("🌱 Fresh Expand", n_frsh)
+
+      # Top 3 summary cards
+      top3 = eb_show.head(3)
+      if len(top3) > 0:
+          cols3 = st.columns(min(3, len(top3)))
+          for i, (_, r) in enumerate(top3.iterrows()):
+              tier = str(r.get("EB_Tier", ""))
+              fresh_txt = "🌱 Fresh Expand  " if bool(r.get("EB_FreshExpand", False)) else ""
+              prio_val  = fmt_val(r.get("EB_Priority", "—"))
+              with cols3[i]:
+                  st.markdown(f"**{r.get('Ticker','—')}** — {tier}")
+                  st.caption(
+                      f"{fresh_txt}"
+                      f"BB {fmt_val(r.get('BB_Width_Str','—'))} · "
+                      f"VolVel {fmt_val(r.get('Vol_Velocity','—'))} · "
+                      f"CMF {fmt_val(r.get('CMF','—'))} · "
+                      f"Priority {prio_val}"
+                  )
+
+      st.divider()
+      eb_tbl = [c for c in [
+          "Ticker","Close","EB_Tier","EB_Priority","EB_FreshExpand",
+          "BB_Width_Str","Vol_Velocity","Vol_Ratio","CMF","UD_Vol_Ratio",
+          "MACD_PreCross","CVI","Rekomendasi_Action","Support","Resistance"
+      ] if c in eb_show.columns]
+      if eb_tbl:
+          st.dataframe(eb_show[eb_tbl].reset_index(drop=True),
+              use_container_width=True, height=420,
+              column_config={
+                  "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                  "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+                  "EB_Tier":       st.column_config.TextColumn("Tier", width=130),
+                  "EB_Priority":   st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
+                  "EB_FreshExpand":st.column_config.CheckboxColumn("🌱 Fresh"),
+                  "Vol_Velocity":  st.column_config.NumberColumn("Vol Vel", format="%.2f"),
+                  "Vol_Ratio":     st.column_config.NumberColumn("Vol Ratio", format="%.2f"),
+                  "CMF":           st.column_config.NumberColumn("CMF", format="%.2f"),
+                  "UD_Vol_Ratio":  st.column_config.NumberColumn("UD Vol", format="%.2f"),
+                  "MACD_PreCross": st.column_config.CheckboxColumn("⚡ PreCross"),
+                  "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
+                  "Support":       st.column_config.NumberColumn("Support", format="Rp %,.0f"),
+                  "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
+              })
+          st.download_button("⬇️ Download Early Breakout (.xlsx)",
+              data=to_excel(eb_show[eb_tbl], "EarlyBreakout"),
+              file_name=f"DragonFire_EarlyBreakout_{now_jkt().strftime('%Y%m%d')}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
