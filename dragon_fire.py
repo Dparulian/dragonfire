@@ -200,6 +200,241 @@ def save_snapshot_history(df_export, table_name, db_engine, today_str):
         return False
 
 
+# ══════════════════════════════════════════════════════════════════
+# 1b. SELF-EVALUATION ENGINE — SIGNAL OUTCOMES TRACKER (Cloud only)
+# ══════════════════════════════════════════════════════════════════
+# Tujuan: setiap kali screener kasih sinyal BUY (ACCUMULATION BUY /
+# STEALTH BUY / FAST TRADE) ke suatu saham, sistem "mencatat janji" itu
+# ke tabel signal_outcomes, lalu SETIAP HARI script jalan lagi, dia balik
+# cek: sinyal yang dikasih sebelumnya itu sekarang nasibnya gimana --
+# sudah hit target profit, masih berjalan, atau sudah kelewat batas waktu
+# (Expected_Days) tapi belum kena target. Ini yang bikin performa
+# screener bisa dievaluasi OTOMATIS dari waktu ke waktu (win rate per
+# tier, dst), tanpa perlu compile manual dari file Excel/histori.
+#
+# Siklus hidup satu baris di signal_outcomes:
+#   ONGOING --(profit target tercapai)--> HIT_TARGET
+#   ONGOING --(Hari_Berjalan > Expected_Days, belum hit)--> EXPIRED_NO_HIT
+#
+# Kalau saham yang sama dapat sinyal BUY baru setelah baris lamanya sudah
+# selesai (HIT_TARGET/EXPIRED_NO_HIT), sistem akan mulai "episode" baru
+# (baris baru) -- bukan menimpa yang lama, supaya histori tetap utuh.
+
+SIGNAL_OUTCOMES_TABLE = 'signal_outcomes'
+
+
+def ensure_signal_outcomes_table(db_engine):
+    """Buat tabel signal_outcomes kalau belum ada."""
+    try:
+        with db_engine.connect() as conn:
+            conn.execute(text(f"""
+                CREATE TABLE IF NOT EXISTS {SIGNAL_OUTCOMES_TABLE} (
+                    id                   SERIAL PRIMARY KEY,
+                    ticker               TEXT NOT NULL,
+                    tanggal_signal       DATE NOT NULL,
+                    tier_signal          TEXT,
+                    close_signal         DOUBLE PRECISION,
+                    expected_days        DOUBLE PRECISION,
+                    profit_target_pct    DOUBLE PRECISION,
+                    cvi_signal           DOUBLE PRECISION,
+                    vol_ratio_signal     DOUBLE PRECISION,
+                    vol_velocity_signal  DOUBLE PRECISION,
+                    cmf_signal           DOUBLE PRECISION,
+                    ud_vol_ratio_signal  DOUBLE PRECISION,
+                    macd_signal_val      DOUBLE PRECISION,
+                    macd_slope_signal    DOUBLE PRECISION,
+                    macd_precross_signal BOOLEAN,
+                    bb_width_signal      DOUBLE PRECISION,
+                    adx_signal           DOUBLE PRECISION,
+                    conf_score_signal    INTEGER,
+                    max_close_sejauh_ini DOUBLE PRECISION,
+                    max_gain_pct         DOUBLE PRECISION DEFAULT 0,
+                    tanggal_max_close    DATE,
+                    hari_berjalan        INTEGER DEFAULT 0,
+                    status               TEXT DEFAULT 'ONGOING',
+                    tanggal_resolved     DATE,
+                    last_update          DATE
+                )
+            """))
+            conn.commit()
+        return True
+    except Exception as e:
+        print(f"⚠️  Gagal memastikan tabel {SIGNAL_OUTCOMES_TABLE}: {e}")
+        return False
+
+
+def record_new_signals(dragon_candidates, db_engine, today_str):
+    """
+    Untuk setiap ticker yang HARI INI dapat sinyal BUY (ada di
+    dragon_candidates), cek apakah ticker itu SUDAH punya episode ONGOING
+    yang masih berjalan. Kalau belum, mulai episode baru (INSERT baris).
+    Kalau sudah ONGOING, skip (jangan duplikat -- itu 'janji' yang sama).
+    """
+    if dragon_candidates is None or dragon_candidates.empty:
+        return 0
+    try:
+        with db_engine.connect() as conn:
+            existing = conn.execute(text(
+                f"SELECT ticker FROM {SIGNAL_OUTCOMES_TABLE} WHERE status = 'ONGOING'"
+            )).fetchall()
+            tickers_ongoing = set(r[0] for r in existing)
+
+        new_rows = []
+        for _, row in dragon_candidates.iterrows():
+            ticker = row.get('Ticker', '')
+            if not ticker or ticker in tickers_ongoing:
+                continue  # sudah ada episode berjalan, jangan buat baris baru
+
+            tier = None
+            for t in ['ACCUMULATION BUY', 'STEALTH BUY', 'FAST TRADE']:
+                if t in str(row.get('Rekomendasi_Action', '')):
+                    tier = t
+                    break
+            if tier is None:
+                continue  # bukan sinyal BUY (mis. HINDARI/WAIT & SEE ikut ke-scan)
+
+            try:
+                bb_pct = float(str(row.get('BB_Width_Str', '0%')).replace('%', ''))
+            except Exception:
+                bb_pct = None
+            try:
+                est_days = float(str(row.get('Hari_Ke_Breakout', '0 Hari')).replace(' Hari', ''))
+            except Exception:
+                est_days = None
+            try:
+                upsize_pct = float(str(row.get('Potensial_Upsize', '+0%')).replace('+', '').replace('%', ''))
+                profit_target_pct = max(10.0, upsize_pct * 0.75)
+            except Exception:
+                profit_target_pct = 10.0
+
+            new_rows.append({
+                'ticker': ticker,
+                'tanggal_signal': today_str,
+                'tier_signal': tier,
+                'close_signal': float(row.get('Close', 0) or 0),
+                'expected_days': est_days,
+                'profit_target_pct': round(profit_target_pct, 1),
+                'cvi_signal': float(row.get('CVI', 0) or 0),
+                'vol_ratio_signal': float(row.get('Vol_Ratio', 0) or 0),
+                'vol_velocity_signal': float(row.get('Vol_Velocity', 0) or 0),
+                'cmf_signal': float(row.get('CMF', 0) or 0),
+                'ud_vol_ratio_signal': float(row.get('UD_Vol_Ratio', 0) or 0),
+                'macd_signal_val': float(row.get('MACD', 0) or 0),
+                'macd_slope_signal': float(row.get('MACD_Slope', 0) or 0),
+                'macd_precross_signal': bool(row.get('MACD_PreCross', False)),
+                'bb_width_signal': bb_pct,
+                'adx_signal': float(row.get('ADX', 0) or 0),
+                'conf_score_signal': int(row.get('Conf_Score', 0) or 0),
+                'max_close_sejauh_ini': float(row.get('Close', 0) or 0),
+                'max_gain_pct': 0.0,
+                'tanggal_max_close': today_str,
+                'hari_berjalan': 0,
+                'status': 'ONGOING',
+                'last_update': today_str,
+            })
+
+        if not new_rows:
+            return 0
+
+        pd.DataFrame(new_rows).to_sql(
+            SIGNAL_OUTCOMES_TABLE, db_engine, if_exists='append', index=False
+        )
+        print(f"   📝 signal_outcomes: +{len(new_rows)} episode sinyal baru dicatat")
+        return len(new_rows)
+    except Exception as e:
+        print(f"⚠️  record_new_signals ERROR: {e}")
+        return 0
+
+
+def update_ongoing_signals(dict_df_full, db_engine, today_str):
+    """
+    Untuk semua episode berstatus ONGOING, ambil harga TERKINI dari
+    dict_df_full (universe lengkap, jadi tetap bisa update walau ticker-
+    nya sudah tidak lolos filter screener hari ini), lalu:
+      - update Max_Close_Sejauh_Ini / Max_Gain_Pct kalau ada rekor baru
+      - update Hari_Berjalan (+1 sejak update terakhir tercatat)
+      - resolve ke HIT_TARGET kalau Max_Gain_Pct >= Profit_Target_Pct
+      - resolve ke EXPIRED_NO_HIT kalau Hari_Berjalan > Expected_Days
+        dan belum pernah hit target
+    """
+    try:
+        with db_engine.connect() as conn:
+            ongoing = pd.read_sql(text(
+                f"SELECT * FROM {SIGNAL_OUTCOMES_TABLE} WHERE status = 'ONGOING'"
+            ), conn)
+    except Exception as e:
+        print(f"⚠️  update_ongoing_signals: gagal baca episode ONGOING: {e}")
+        return 0
+
+    if ongoing.empty:
+        return 0
+
+    today_date = pd.to_datetime(today_str).date()
+    n_hit, n_expired, n_updated = 0, 0, 0
+
+    for _, ep in ongoing.iterrows():
+        ticker = ep['ticker']
+        if ticker not in dict_df_full:
+            continue  # ticker sekarang tidak ada di universe (delisting dll), biarkan ONGOING
+
+        try:
+            current_close = float(dict_df_full[ticker]['Close'].iloc[-1])
+        except Exception:
+            continue
+
+        close_signal   = float(ep['close_signal'] or 0)
+        if close_signal <= 0:
+            continue
+
+        prev_max       = float(ep['max_close_sejauh_ini'] or close_signal)
+        new_max        = max(prev_max, current_close)
+        new_max_gain   = round((new_max - close_signal) / close_signal * 100, 2)
+
+        tanggal_signal = pd.to_datetime(ep['tanggal_signal']).date()
+        hari_berjalan  = (today_date - tanggal_signal).days
+
+        profit_target  = float(ep['profit_target_pct'] or 10.0)
+        expected_days  = ep['expected_days']
+
+        new_status   = 'ONGOING'
+        resolved_dt  = None
+        if new_max_gain >= profit_target:
+            new_status  = 'HIT_TARGET'
+            resolved_dt = today_str
+            n_hit += 1
+        elif expected_days is not None and hari_berjalan > float(expected_days):
+            new_status  = 'EXPIRED_NO_HIT'
+            resolved_dt = today_str
+            n_expired += 1
+
+        try:
+            with db_engine.connect() as conn:
+                conn.execute(text(f"""
+                    UPDATE {SIGNAL_OUTCOMES_TABLE}
+                    SET max_close_sejauh_ini = :mc,
+                        max_gain_pct         = :mg,
+                        tanggal_max_close    = CASE WHEN :mc_is_new THEN :today ELSE tanggal_max_close END,
+                        hari_berjalan        = :hb,
+                        status                = :st,
+                        tanggal_resolved      = :resolved,
+                        last_update           = :today
+                    WHERE id = :id
+                """), {
+                    'mc': new_max, 'mg': new_max_gain,
+                    'mc_is_new': new_max > prev_max,
+                    'hb': hari_berjalan, 'st': new_status,
+                    'resolved': resolved_dt, 'today': today_str, 'id': int(ep['id']),
+                })
+                conn.commit()
+            n_updated += 1
+        except Exception as e:
+            print(f"⚠️  Gagal update episode {ticker} (id={ep['id']}): {e}")
+
+    print(f"   🔁 signal_outcomes: {n_updated} episode di-update "
+          f"({n_hit} baru HIT_TARGET, {n_expired} baru EXPIRED_NO_HIT)")
+    return n_updated
+
+
 if IS_CLOUD:
     try:
         db_engine = create_engine(DATABASE_URL)
@@ -266,6 +501,36 @@ def build_features(df, ticker_name):
     gain   = delta.where(delta > 0, 0).rolling(14).mean()
     loss   = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + gain / loss.replace(0, 1e-9)))
+
+    # ── NEW: ADX (14) — Average Directional Index ─────────────────
+    # Mengukur KEKUATAN tren (bukan arahnya) -- dipakai di _conf_score()
+    # sebagai salah satu syarat konfluensi (ADX >= 25 = tren cukup kuat
+    # untuk dipercaya). Sebelumnya kolom ini di-hardcode ke 0.0 di bagian
+    # scoring (dead code, ADX>=25 tidak pernah tercapai) -- sekarang
+    # dihitung sungguhan dari data harga.
+    #
+    # Catatan implementasi: pakai rolling-mean untuk smoothing (bukan
+    # Wilder's true EMA smoothing) -- konsisten dengan pendekatan yang
+    # sudah dipakai di detector lain (mis. reversal ADX check). Cukup
+    # akurat untuk keperluan threshold di Conf_Score; kalau butuh presisi
+    # lebih tinggi, bisa di-upgrade ke Wilder's smoothing (ewm dengan
+    # alpha=1/14) di iterasi berikutnya.
+    _high, _low, _close_prev = df['High'], df['Low'], df['Close'].shift()
+    _plus_dm  = _high.diff()
+    _minus_dm = -_low.diff()
+    _plus_dm  = _plus_dm.where((_plus_dm > _minus_dm) & (_plus_dm > 0), 0.0)
+    _minus_dm = _minus_dm.where((_minus_dm > _plus_dm) & (_minus_dm > 0), 0.0)
+    _tr = pd.concat([
+        _high - _low,
+        (_high - _close_prev).abs(),
+        (_low - _close_prev).abs(),
+    ], axis=1).max(axis=1)
+    _atr14     = _tr.rolling(14).mean().replace(0, 1e-9)
+    _plus_di   = 100 * _plus_dm.rolling(14).mean() / _atr14
+    _minus_di  = 100 * _minus_dm.rolling(14).mean() / _atr14
+    _di_sum    = (_plus_di + _minus_di).replace(0, 1e-9)
+    _dx        = 100 * (_plus_di - _minus_di).abs() / _di_sum
+    df['ADX']  = _dx.rolling(14).mean()
 
     # ── NEW: CMF 3-day change (untuk alert distribusi) ────────────
     df['CMF_3d_Change'] = df['CMF'].diff(periods=3)
@@ -380,18 +645,15 @@ def detect_reversal(row, df_hist):
             except: pass
         crit_stoch_rsi = stoch_rsi < 0.20
 
-        # Improvement 2: ADX melemah
+        # Improvement 2: ADX melemah -- reuse kolom 'ADX' yang sudah
+        # dihitung di build_features() (dulu dihitung ULANG dari nol di
+        # sini, sekarang cukup baca kolom yang sudah ada -- lebih cepat
+        # dan menjamin angkanya konsisten dengan ADX yang dipakai di
+        # Conf_Score).
         adx_weakening = False
-        if df_hist is not None and len(df_hist) >= 30:
+        if df_hist is not None and 'ADX' in df_hist.columns and len(df_hist) >= 30:
             try:
-                hs = df_hist['High'].tail(30); ls = df_hist['Low'].tail(30); cs2 = df_hist['Close'].tail(30)
-                pdm = hs.diff().clip(lower=0); mdm = (-ls.diff()).clip(lower=0)
-                pdm = pdm.where(pdm > mdm, 0); mdm = mdm.where(mdm > pdm, 0)
-                tr  = pd.concat([hs-ls,(hs-cs2.shift()).abs(),(ls-cs2.shift()).abs()],axis=1).max(axis=1)
-                atr = tr.rolling(14).mean().replace(0, 1e-9)
-                pdi = 100*pdm.rolling(14).mean()/atr; mdi = 100*mdm.rolling(14).mean()/atr
-                dx  = 100*(pdi-mdi).abs()/(pdi+mdi).replace(0,1e-9)
-                adx_ser = dx.rolling(14).mean().dropna()
+                adx_ser = df_hist['ADX'].tail(30).dropna()
                 if len(adx_ser) >= 5:
                     adx_weakening = bool(adx_ser.iloc[-1] < adx_ser.iloc[-5])
             except: pass
@@ -1034,8 +1296,12 @@ def _conf_score(row):
 df_latest_global['Conf_Score'] = df_latest_global.apply(_conf_score, axis=1)
 
 # ── ADX ─────────────────────────────────────────────────────────────
+# ADX sekarang dihitung sungguhan di build_features() (lihat bagian 5),
+# baris ini cuma jaga-jaga kalau ada NaN di warmup period awal data.
 if 'ADX' not in df_latest_global.columns:
     df_latest_global['ADX'] = 0.0
+else:
+    df_latest_global['ADX'] = df_latest_global['ADX'].fillna(0.0)
 
 cols_final = [
     'Ticker', 'Close', 'Support', 'Resistance', 'BB_Width_Str',
@@ -1210,6 +1476,17 @@ if not dragon_candidates.empty:
             # ── screener_history: snapshot harian master ──────────
             save_screener_history(df_all_export, db_engine, today_wib_str())
 
+            # ── signal_outcomes: self-evaluation engine ───────────
+            # 1) update dulu episode ONGOING yang sudah ada (pakai harga
+            #    hari ini dari SELURUH universe, bukan cuma yang lolos
+            #    filter hari ini -- supaya tetap ke-track walau saham-nya
+            #    udah nggak match kriteria screener lagi)
+            # 2) baru catat episode BARU dari sinyal BUY hari ini
+            print("🎯 Self-Evaluation Engine: update & catat signal_outcomes...")
+            ensure_signal_outcomes_table(db_engine)
+            update_ongoing_signals(dict_df_full, db_engine, today_wib_str())
+            record_new_signals(dragon_candidates, db_engine, today_wib_str())
+
             # ── reversal_history: snapshot harian reversal ────────
             if not reversal_candidates.empty:
                 rev_hist_cols = [c for c in [
@@ -1277,6 +1554,14 @@ else:
         try:
             df_all_export.to_sql('all_stocks_live', db_engine, if_exists='replace', index=False)
             save_screener_history(df_all_export, db_engine, today_wib_str())
+
+            # ── signal_outcomes: tetap update episode ONGOING walau
+            # hari ini tidak ada sinyal BUY baru -- posisi yang sedang
+            # dipantau tetap perlu di-update harga terkininya.
+            print("🎯 Self-Evaluation Engine: update signal_outcomes (tidak ada sinyal baru hari ini)...")
+            ensure_signal_outcomes_table(db_engine)
+            update_ongoing_signals(dict_df_full, db_engine, today_wib_str())
+
             if not reversal_candidates.empty:
                 save_snapshot_history(
                     reversal_candidates[[c for c in ['Ticker','Close','Rev_Score',
