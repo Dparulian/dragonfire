@@ -439,6 +439,42 @@ def normalize_breakout(df):
 
 df_breakout = normalize_breakout(fetch_cloud_data('early_breakout_live'))
 
+def normalize_signal_outcomes(df):
+    """Normalkan kolom signal_outcomes (Self-Evaluation Engine) dari DB."""
+    if df is None or df.empty: return pd.DataFrame()
+    df = df.copy()
+    df.columns = [str(c).lower().strip() for c in df.columns]
+    df = df.loc[:, ~df.columns.duplicated(keep='first')]
+    so_map = {
+        'id':'ID', 'ticker':'Ticker', 'tanggal_signal':'Tanggal_Signal',
+        'tier_signal':'Tier_Signal', 'close_signal':'Close_Signal',
+        'expected_days':'Expected_Days', 'profit_target_pct':'Profit_Target_Pct',
+        'cvi_signal':'CVI_Signal', 'vol_ratio_signal':'Vol_Ratio_Signal',
+        'vol_velocity_signal':'Vol_Velocity_Signal', 'cmf_signal':'CMF_Signal',
+        'ud_vol_ratio_signal':'UD_Vol_Ratio_Signal', 'macd_signal_val':'MACD_Signal',
+        'macd_slope_signal':'MACD_Slope_Signal', 'macd_precross_signal':'MACD_PreCross_Signal',
+        'bb_width_signal':'BB_Width_Signal', 'adx_signal':'ADX_Signal',
+        'conf_score_signal':'Conf_Score_Signal',
+        'max_close_sejauh_ini':'Max_Close', 'max_gain_pct':'Max_Gain_Pct',
+        'tanggal_max_close':'Tanggal_Max_Close', 'hari_berjalan':'Hari_Berjalan',
+        'status':'Status', 'tanggal_resolved':'Tanggal_Resolved', 'last_update':'Last_Update',
+    }
+    df = df.rename(columns=so_map)
+    if 'Ticker' in df.columns:
+        df['Ticker'] = df['Ticker'].astype(str).str.strip().str.upper()
+    for col in ['Close_Signal','Expected_Days','Profit_Target_Pct','CVI_Signal',
+                'Vol_Ratio_Signal','Max_Close','Max_Gain_Pct','Hari_Berjalan']:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    if 'MACD_PreCross_Signal' in df.columns:
+        df['MACD_PreCross_Signal'] = df['MACD_PreCross_Signal'].astype(str).str.lower().isin(['true','1','yes'])
+    for col in ['Tanggal_Signal','Tanggal_Max_Close','Tanggal_Resolved','Last_Update']:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors='coerce')
+    return df
+
+df_signal_outcomes = normalize_signal_outcomes(fetch_cloud_data('signal_outcomes'))
+
 # ══════════════════════════════════════════════════════
 # 4. HELPERS
 # ══════════════════════════════════════════════════════
@@ -616,6 +652,17 @@ n_alert = int(df_all_stocks['Alert_Flag'].str.len().gt(0).sum()) \
 n_hist  = df_history['Tanggal_Scan'].nunique() \
     if not df_history.empty and 'Tanggal_Scan' in df_history.columns else 0
 
+# Self-Evaluation: win rate dari episode yang SUDAH resolved (HIT_TARGET/EXPIRED_NO_HIT)
+n_so_ongoing = int((df_signal_outcomes['Status'] == 'ONGOING').sum()) \
+    if not df_signal_outcomes.empty and 'Status' in df_signal_outcomes.columns else 0
+if not df_signal_outcomes.empty and 'Status' in df_signal_outcomes.columns:
+    _resolved   = df_signal_outcomes[df_signal_outcomes['Status'].isin(['HIT_TARGET', 'EXPIRED_NO_HIT'])]
+    n_so_resolved = len(_resolved)
+    n_so_hit      = int((_resolved['Status'] == 'HIT_TARGET').sum())
+    win_rate_pct  = round(n_so_hit / n_so_resolved * 100, 1) if n_so_resolved else None
+else:
+    n_so_resolved, n_so_hit, win_rate_pct = 0, 0, None
+
 # Confidence Score 5 count (new B3)
 n_conf5 = int((df_screener['Conf_Score'] == 5).sum()) \
     if n_sc and 'Conf_Score' in df_screener.columns else 0
@@ -687,13 +734,20 @@ with st.sidebar:
         f'<div class="val">{n_all} emiten</div></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="sb-stat"><div class="lbl">Riwayat Tersimpan</div>'
         f'<div class="val">{n_hist} hari</div></div>', unsafe_allow_html=True)
+    _wr_color = 'var(--green)' if (win_rate_pct or 0) >= 40 else (
+        'var(--amber)' if (win_rate_pct or 0) >= 20 else 'var(--red)')
+    _wr_display = f'{win_rate_pct}%' if win_rate_pct is not None else '—'
+    st.markdown(f'<div class="sb-stat"><div class="lbl">🎯 Win Rate (Resolved)</div>'
+        f'<div class="val" style="color:{_wr_color}">{_wr_display}</div>'
+        f'<div class="h" style="font-size:10px;color:var(--text-2);margin-top:2px;">'
+        f'{n_so_hit}/{n_so_resolved} hit · {n_so_ongoing} ongoing</div></div>', unsafe_allow_html=True)
     st.markdown('---')
     st.caption(f'Dragon Fire v5.0 · KangTao Cari Cuan\n\n{now_str}')
 
 # ══════════════════════════════════════════════════════
 # 6. MAIN TABS
 # ══════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     '📊  LIVE SCREENER',
     '📋  WATCHLIST',
     '💼  PORTOFOLIO SAYA',
@@ -703,6 +757,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     '🔄  HISTORI REVERSAL',
     '⚡  HISTORI BREAKOUT',
     '⚡  EARLY BREAKOUT',
+    '🎯  SELF-EVALUATION',
 ])
 
 # TAB 1 · LIVE SCREENER
@@ -1654,3 +1709,165 @@ with tab9:
               data=to_excel(eb_show[eb_tbl], "EarlyBreakout"),
               file_name=f"DragonFire_EarlyBreakout_{now_jkt().strftime('%Y%m%d')}.xlsx",
               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# ══════════════════════════════════════════════════════
+# TAB 10 · SELF-EVALUATION — WIN RATE & SIGNAL TRACKER
+# ══════════════════════════════════════════════════════
+with tab10:
+  st.markdown("""<div class="abox abox-info">🎯 <strong>Self-Evaluation Engine</strong> — setiap kali
+      screener kasih sinyal BUY, sistem otomatis mencatat "janji" itu dan mengecek nasibnya
+      SETIAP HARI: apakah sudah mencapai target profit (<strong>HIT_TARGET</strong>), masih berjalan
+      (<strong>ONGOING</strong>), atau sudah lewat batas waktu <em>Expected_Days</em> tanpa hit
+      (<strong>EXPIRED_NO_HIT</strong>). Data ini murni observasional dari histori — <strong>bukan
+      jaminan hasil ke depan.</strong></div>""", unsafe_allow_html=True)
+
+  if df_signal_outcomes.empty:
+      st.markdown('<div class="abox abox-warn">⚠ Belum ada data signal_outcomes. '
+          'Tabel ini terisi otomatis setiap kali dragon_fire.py dijalankan (mode Cloud) '
+          'dan ada sinyal BUY yang tercatat.</div>', unsafe_allow_html=True)
+  else:
+      resolved = df_signal_outcomes[df_signal_outcomes['Status'].isin(['HIT_TARGET', 'EXPIRED_NO_HIT'])].copy()
+      ongoing  = df_signal_outcomes[df_signal_outcomes['Status'] == 'ONGOING'].copy()
+
+      # ── KPI cards ────────────────────────────────────────────────
+      total_ep   = len(df_signal_outcomes)
+      n_hit_all  = int((resolved['Status'] == 'HIT_TARGET').sum())
+      n_exp_all  = int((resolved['Status'] == 'EXPIRED_NO_HIT').sum())
+      wr_all     = round(n_hit_all / len(resolved) * 100, 1) if len(resolved) else None
+      avg_gain_ongoing = ongoing['Max_Gain_Pct'].mean() if not ongoing.empty else None
+
+      k1, k2, k3, k4, k5 = st.columns(5)
+      with k1: st.markdown(f'<div class="mcard"><div class="lbl">Total Episode Sinyal</div>'
+          f'<div class="val">{total_ep}</div><div class="sub">Sejak tracking aktif</div></div>',
+          unsafe_allow_html=True)
+      with k2: st.markdown(f'<div class="mcard"><div class="lbl">🟢 ONGOING</div>'
+          f'<div class="val" style="color:var(--blue)">{len(ongoing)}</div>'
+          f'<div class="sub">Masih dipantau</div></div>', unsafe_allow_html=True)
+      with k3: st.markdown(f'<div class="mcard"><div class="lbl">✅ HIT TARGET</div>'
+          f'<div class="val" style="color:var(--green)">{n_hit_all}</div>'
+          f'<div class="sub">dari {len(resolved)} resolved</div></div>', unsafe_allow_html=True)
+      with k4: st.markdown(f'<div class="mcard"><div class="lbl">❌ EXPIRED (No Hit)</div>'
+          f'<div class="val" style="color:var(--red)">{n_exp_all}</div>'
+          f'<div class="sub">Lewat Expected_Days</div></div>', unsafe_allow_html=True)
+      with k5:
+          _wr_color = 'var(--green)' if (wr_all or 0) >= 40 else ('var(--amber)' if (wr_all or 0) >= 20 else 'var(--red)')
+          st.markdown(f'<div class="mcard"><div class="lbl">🎯 Win Rate</div>'
+              f'<div class="val" style="color:{_wr_color}">{fmt_val(wr_all)}%</div>'
+              f'<div class="sub">Dari episode resolved saja</div></div>', unsafe_allow_html=True)
+
+      st.markdown('<div class="abox abox-warn">⚠ <strong>Perhatikan sample size per tier</strong> '
+          'sebelum menyimpulkan tier mana yang "terbaik" — tier dengan <em>Expected_Days</em> lebih '
+          'panjang (ACCUMULATION BUY, STEALTH BUY) butuh waktu lebih lama untuk resolved secara adil '
+          'dibanding FAST TRADE. Cek kolom <strong>N Resolved</strong> di tabel breakdown sebelum '
+          'membandingkan win rate antar tier.</div>', unsafe_allow_html=True)
+
+      # ── Breakdown per Tier ───────────────────────────────────────
+      st.markdown('<div class="slabel">WIN RATE PER TIER SINYAL</div>', unsafe_allow_html=True)
+      if not resolved.empty and 'Tier_Signal' in resolved.columns:
+          tier_stats = (
+              resolved.groupby('Tier_Signal')
+              .agg(
+                  N_Resolved=('Status', 'count'),
+                  N_Hit=('Status', lambda s: (s == 'HIT_TARGET').sum()),
+                  Avg_Max_Gain_Pct=('Max_Gain_Pct', 'mean'),
+                  Median_Max_Gain_Pct=('Max_Gain_Pct', 'median'),
+              )
+              .reset_index()
+          )
+          tier_stats['Win_Rate_Pct'] = (tier_stats['N_Hit'] / tier_stats['N_Resolved'] * 100).round(1)
+          tier_stats['Avg_Max_Gain_Pct'] = tier_stats['Avg_Max_Gain_Pct'].round(2)
+          tier_stats['Median_Max_Gain_Pct'] = tier_stats['Median_Max_Gain_Pct'].round(2)
+          tier_stats = tier_stats.sort_values('Win_Rate_Pct', ascending=False)
+
+          tcols = st.columns(len(tier_stats)) if len(tier_stats) <= 4 else st.columns(4)
+          for i, (_, tr) in enumerate(tier_stats.iterrows()):
+              col = tcols[i % len(tcols)]
+              wr_c = 'var(--green)' if tr['Win_Rate_Pct'] >= 40 else ('var(--amber)' if tr['Win_Rate_Pct'] >= 20 else 'var(--red)')
+              with col:
+                  st.markdown(f"""<div class="dc">
+                      <div class="k">{tr['Tier_Signal']}</div>
+                      <div class="v" style="color:{wr_c}">{tr['Win_Rate_Pct']}%</div>
+                      <div class="h">{int(tr['N_Hit'])}/{int(tr['N_Resolved'])} hit · avg gain {tr['Avg_Max_Gain_Pct']}%</div>
+                  </div>""", unsafe_allow_html=True)
+
+          st.dataframe(tier_stats, use_container_width=True, hide_index=True,
+              column_config={
+                  "Tier_Signal":         st.column_config.TextColumn("Tier"),
+                  "N_Resolved":          st.column_config.NumberColumn("N Resolved"),
+                  "N_Hit":               st.column_config.NumberColumn("N Hit Target"),
+                  "Win_Rate_Pct":        st.column_config.ProgressColumn("Win Rate %", min_value=0, max_value=100, format="%.1f%%"),
+                  "Avg_Max_Gain_Pct":    st.column_config.NumberColumn("Avg Max Gain %", format="%.2f%%"),
+                  "Median_Max_Gain_Pct": st.column_config.NumberColumn("Median Max Gain %", format="%.2f%%"),
+              })
+      else:
+          st.caption("Belum ada episode yang resolved untuk dihitung win rate per tier.")
+
+      st.divider()
+
+      # ── Tabel ONGOING (sedang dipantau) ─────────────────────────
+      st.markdown('<div class="slabel">📡 SEDANG DIPANTAU (ONGOING)</div>', unsafe_allow_html=True)
+      if not ongoing.empty:
+          ongoing_show = ongoing.copy()
+          ongoing_show['Progress_ke_Target_Pct'] = (
+              ongoing_show['Max_Gain_Pct'] / ongoing_show['Profit_Target_Pct'] * 100
+          ).clip(lower=0, upper=100).round(1)
+          ongoing_show['Sisa_Hari_vs_Expected'] = (
+              ongoing_show['Expected_Days'] - ongoing_show['Hari_Berjalan']
+          ).round(0)
+          ongoing_cols = ['Ticker', 'Tier_Signal', 'Tanggal_Signal', 'Close_Signal',
+                           'Max_Gain_Pct', 'Profit_Target_Pct', 'Progress_ke_Target_Pct',
+                           'Hari_Berjalan', 'Sisa_Hari_vs_Expected']
+          ongoing_cols = [c for c in ongoing_cols if c in ongoing_show.columns]
+          ongoing_show = ongoing_show[ongoing_cols].sort_values('Progress_ke_Target_Pct', ascending=False)
+          st.dataframe(ongoing_show.reset_index(drop=True), use_container_width=True, height=380,
+              column_config={
+                  "Ticker":                  st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                  "Tier_Signal":              st.column_config.TextColumn("Tier"),
+                  "Tanggal_Signal":           st.column_config.DateColumn("Tgl Signal", format="DD MMM YYYY"),
+                  "Close_Signal":             st.column_config.NumberColumn("Harga Signal", format="Rp %,.0f"),
+                  "Max_Gain_Pct":             st.column_config.NumberColumn("Max Gain %", format="%.2f%%"),
+                  "Profit_Target_Pct":        st.column_config.NumberColumn("Target %", format="%.1f%%"),
+                  "Progress_ke_Target_Pct":   st.column_config.ProgressColumn("Progress ke Target", min_value=0, max_value=100, format="%.0f%%"),
+                  "Hari_Berjalan":            st.column_config.NumberColumn("Hari Berjalan"),
+                  "Sisa_Hari_vs_Expected":    st.column_config.NumberColumn("Sisa Hari (vs Expected)"),
+              })
+          st.download_button("⬇️ Download Ongoing (.xlsx)",
+              data=to_excel(ongoing_show, "Ongoing_Signals"),
+              file_name=f"DragonFire_SignalOutcomes_Ongoing_{now_jkt().strftime('%Y%m%d')}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      else:
+          st.caption("Tidak ada episode ONGOING saat ini.")
+
+      st.divider()
+
+      # ── Tabel Resolved (histori HIT_TARGET / EXPIRED_NO_HIT) ────
+      st.markdown('<div class="slabel">📜 HISTORI RESOLVED</div>', unsafe_allow_html=True)
+      if not resolved.empty:
+          status_filter = st.multiselect(
+              "Filter status", options=['HIT_TARGET', 'EXPIRED_NO_HIT'],
+              default=['HIT_TARGET', 'EXPIRED_NO_HIT'], key='so_status_filter'
+          )
+          resolved_show = resolved[resolved['Status'].isin(status_filter)].copy() if status_filter else resolved.copy()
+          resolved_cols = ['Ticker', 'Tier_Signal', 'Status', 'Tanggal_Signal', 'Tanggal_Resolved',
+                            'Close_Signal', 'Max_Close', 'Max_Gain_Pct', 'Profit_Target_Pct', 'Hari_Berjalan']
+          resolved_cols = [c for c in resolved_cols if c in resolved_show.columns]
+          resolved_show = resolved_show[resolved_cols].sort_values('Tanggal_Resolved', ascending=False)
+          st.dataframe(resolved_show.reset_index(drop=True), use_container_width=True, height=420,
+              column_config={
+                  "Ticker":            st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                  "Tier_Signal":       st.column_config.TextColumn("Tier"),
+                  "Status":            st.column_config.TextColumn("Status"),
+                  "Tanggal_Signal":    st.column_config.DateColumn("Tgl Signal", format="DD MMM YYYY"),
+                  "Tanggal_Resolved":  st.column_config.DateColumn("Tgl Resolved", format="DD MMM YYYY"),
+                  "Close_Signal":      st.column_config.NumberColumn("Harga Signal", format="Rp %,.0f"),
+                  "Max_Close":         st.column_config.NumberColumn("Max Close", format="Rp %,.0f"),
+                  "Max_Gain_Pct":      st.column_config.NumberColumn("Max Gain %", format="%.2f%%"),
+                  "Profit_Target_Pct": st.column_config.NumberColumn("Target %", format="%.1f%%"),
+                  "Hari_Berjalan":     st.column_config.NumberColumn("Hari Berjalan"),
+              })
+          st.download_button("⬇️ Download Histori Resolved (.xlsx)",
+              data=to_excel(resolved_show, "Resolved_Signals"),
+              file_name=f"DragonFire_SignalOutcomes_Resolved_{now_jkt().strftime('%Y%m%d')}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      else:
+          st.caption("Belum ada episode yang resolved.")
