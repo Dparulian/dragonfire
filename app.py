@@ -135,94 +135,6 @@ div[data-testid="stMetricValue"]{font-family:var(--mono)!important;font-size:20p
 .tiger-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2.5px;background:linear-gradient(90deg,var(--tiger),#fb923c);}
 #MainMenu,footer,header{visibility:hidden;}
 
-/* ═══════════════════════════════════════════
-   SIDEBAR NAVIGATION — Dragon Fire v5.1
-   ═══════════════════════════════════════════ */
-[data-testid="stSidebar"] [data-testid="stVerticalBlock"] .stButton > button {
-    width: 100% !important;
-    text-align: left !important;
-    background: transparent !important;
-    border: 1px solid transparent !important;
-    color: var(--text-2) !important;
-    padding: 7px 10px !important;
-    font-size: 12.5px !important;
-    font-weight: 500 !important;
-    border-radius: 7px !important;
-    margin-bottom: 1px !important;
-    transition: all .12s ease !important;
-    justify-content: flex-start !important;
-}
-[data-testid="stSidebar"] .stButton > button:hover {
-    background: var(--bg-card2) !important;
-    border-color: var(--border) !important;
-    color: var(--text) !important;
-}
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {
-    background: var(--fire-dim) !important;
-    border-color: rgba(255,87,34,.35) !important;
-    color: var(--fire) !important;
-    font-weight: 700 !important;
-}
-/* Navigation group labels */
-.nav-grp {
-    font-size: 9px; font-weight: 800; text-transform: uppercase;
-    letter-spacing: 1.5px; color: var(--text-3);
-    padding: 12px 2px 4px; margin-top: 2px;
-    border-top: 1px solid var(--border);
-}
-.nav-grp-first { border-top: none; padding-top: 4px; }
-/* Status row in sidebar */
-.sb-row {
-    display: flex; justify-content: space-between;
-    margin-bottom: 3px; font-size: 10px; color: var(--text-2);
-}
-/* ═══════════════════════════════════════════
-   PAGE HEADERS
-   ═══════════════════════════════════════════ */
-.pg-hdr {
-    background: linear-gradient(135deg,#120600 0%,var(--bg-card) 60%,#071220 100%);
-    border: 1px solid var(--border); border-left: 3px solid var(--fire);
-    border-radius: 12px; padding: 14px 20px; margin-bottom: 14px;
-    display: flex; align-items: center; gap: 14px;
-}
-.pg-hdr-eb   { border-left-color: var(--purple); }
-.pg-hdr-rev  { border-left-color: var(--amber);  }
-.pg-hdr-hist { border-left-color: var(--blue);   }
-.ph-icon  { font-size: 30px; line-height: 1; }
-.ph-title { font-size: 19px; font-weight: 800; color: var(--fire);
-            letter-spacing: -.4px; margin: 0; }
-.ph-title-eb  { color: var(--purple); }
-.ph-title-rev { color: var(--amber);  }
-.ph-title-hist{ color: var(--blue);   }
-.ph-sub { font-size: 11px; color: var(--text-2); margin: 3px 0 0; }
-/* ═══════════════════════════════════════════
-   KPI CARDS v2
-   ═══════════════════════════════════════════ */
-.kc {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 11px 16px; flex: 1; min-width: 115px;
-    position: relative; overflow: hidden;
-}
-.kc::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: var(--fire);
-}
-.kc.kc-g::before { background: var(--green);  }
-.kc.kc-p::before { background: var(--purple); }
-.kc.kc-a::before { background: var(--amber);  }
-.kc.kc-b::before { background: var(--blue);   }
-.kc.kc-r::before { background: var(--red);    }
-.kl { color: var(--text-2); font-size: 9.5px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .9px; }
-.kv { font-size: 23px; font-weight: 800; margin-top: 4px;
-      font-family: var(--mono); color: var(--fire); }
-.kc.kc-g .kv { color: var(--green);  }
-.kc.kc-p .kv { color: var(--purple); }
-.kc.kc-a .kv { color: var(--amber);  }
-.kc.kc-b .kv { color: var(--blue);   }
-.kc.kc-r .kv { color: var(--red);    }
-.ks { font-size: 10.5px; color: var(--text-2); margin-top: 2px; }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -670,513 +582,373 @@ def render_chart(ticker, row=None):
     fig.update_yaxes(showspikes=True,spikecolor="#2a3f55",spikethickness=1)
     st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
 
-
 # ══════════════════════════════════════════════════════
-# 5. GLOBAL METRICS + SIDEBAR NAVIGATION
+# 5. ENGINE SELECTOR + HEADER + SIDEBAR
 # ══════════════════════════════════════════════════════
 now_str = now_str_jkt()
 
+# ── Header ────────────────────────────────────────────────────────
+st.markdown(f"""
+<div style="background:linear-gradient(135deg,#120600 0%,var(--bg-card) 55%,#071220 100%);
+    border:1px solid var(--border);border-left:3px solid var(--fire);border-radius:12px;
+    padding:18px 24px;margin-bottom:16px;display:flex;align-items:center;gap:16px;">
+  <div style="font-size:36px;line-height:1;">🐉</div>
+  <div>
+    <div style="font-size:24px;font-weight:800;color:var(--fire);letter-spacing:-.5px;margin:0;">
+        Dragon Fire Quant Dashboard</div>
+    <div style="font-size:12px;color:var(--text-2);margin:2px 0 0;">
+        Pusat Komando Velositas Modal & Detektor Akumulasi Bandar &nbsp;·&nbsp; {now_str}</div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+# ── KPI metrics ───────────────────────────────────────────────────
 n_sc    = len(df_screener)
 n_wl    = len(df_watchlist)
 n_all   = len(df_all_stocks)
 n_rev   = len(df_reversal)
 n_eb    = len(df_breakout)
-n_buy   = len(df_screener[df_screener["Rekomendasi_Action"].str.contains(
-    "BUY|ACCUMULATION|NYICIL", na=False)]) if n_sc else 0
-n_macd  = int(df_screener["MACD_PreCross"].sum()) \
-    if n_sc and "MACD_PreCross" in df_screener.columns else 0
-n_alert = int(df_all_stocks["Alert_Flag"].str.len().gt(0).sum()) \
-    if n_all and "Alert_Flag" in df_all_stocks.columns else 0
-n_hist  = df_history["Tanggal_Scan"].nunique() \
-    if not df_history.empty and "Tanggal_Scan" in df_history.columns else 0
-n_conf5 = int((df_screener["Conf_Score"] == 5).sum()) \
-    if n_sc and "Conf_Score" in df_screener.columns else 0
+n_buy   = len(df_screener[df_screener['Rekomendasi_Action'].str.contains(
+    'BUY|ACCUMULATION|NYICIL', na=False)]) if n_sc else 0
+n_macd  = int(df_screener['MACD_PreCross'].sum()) \
+    if n_sc and 'MACD_PreCross' in df_screener.columns else 0
+n_alert = int(df_all_stocks['Alert_Flag'].str.len().gt(0).sum()) \
+    if n_all and 'Alert_Flag' in df_all_stocks.columns else 0
+n_hist  = df_history['Tanggal_Scan'].nunique() \
+    if not df_history.empty and 'Tanggal_Scan' in df_history.columns else 0
 
-# ─── SIDEBAR ──────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown(f"""<div style="padding:0 2px 14px;border-bottom:1px solid var(--border);
-margin-bottom:8px;">
-<div style="font-size:21px;font-weight:800;color:var(--fire);letter-spacing:-.5px;">
-🐉 Dragon Fire</div>
-<div style="font-size:9.5px;color:var(--text-2);margin-top:2px;">{now_str}</div>
-</div>""", unsafe_allow_html=True)
+# Confidence Score 5 count (new B3)
+n_conf5 = int((df_screener['Conf_Score'] == 5).sum()) \
+    if n_sc and 'Conf_Score' in df_screener.columns else 0
 
-    if "active_page" not in st.session_state:
-        st.session_state.active_page = "live_screener"
-
-    def _nav(key, icon, label, badge=None):
-        is_act = st.session_state.active_page == key
-        lbl = f"{icon}\u2002{label}"
-        if badge is not None:
-            lbl += f"  ({badge})"
-        if st.button(lbl, key=f"nav_{key}", use_container_width=True,
-                     type="primary" if is_act else "secondary"):
-            st.session_state.active_page = key
-            st.rerun()
-
-    # ── Group 1 ──
-    st.markdown('<div class="nav-grp nav-grp-first">🐉 Dragon Screener</div>',
-                unsafe_allow_html=True)
-    _nav("live_screener", "📊", "Live Screener",     n_sc)
-    _nav("watchlist",     "📋", "Watchlist",          n_wl or None)
-    _nav("portfolio",     "💼", "Portfolio Saya")
-    _nav("monitor",       "👁",  "Monitor")
-    _nav("diagnostik",    "🔍", "Diagnostik Ticker")
-
-    # ── Group 2 ──
-    st.markdown('<div class="nav-grp">⚡ Early Breakout</div>',
-                unsafe_allow_html=True)
-    _nav("early_breakout", "⚡", "Early Breakout Live", n_eb)
-
-    # ── Group 3 ──
-    st.markdown('<div class="nav-grp">🔄 Reversal Screener</div>',
-                unsafe_allow_html=True)
-    _nav("reversal_live", "🔄", "Reversal Watch Live", n_rev)
-
-    # ── Group 4 ──
-    st.markdown('<div class="nav-grp">📅 Histori Data</div>',
-                unsafe_allow_html=True)
-    _nav("histori_harian",   "📅", "Histori Harian",   n_hist)
-    _nav("histori_reversal", "🔄", "Histori Reversal")
-    _nav("histori_breakout", "⚡", "Histori Breakout")
-
-    st.divider()
-    if st.button("🔄  Refresh Data", use_container_width=True, key="sb_refresh"):
+cm1,cm2,cm3,cm4,cm5,cm6,cm7 = st.columns([1,1,1,1,1,2,1.2])
+with cm1: st.markdown(f'<div class="mcard"><div class="lbl">Screener Live</div>'
+    f'<div class="val" style="color:var(--fire)">{n_sc}</div>'
+    f'<div class="sub">Emiten aktif</div></div>', unsafe_allow_html=True)
+with cm2: st.markdown(f'<div class="mcard"><div class="lbl">Sinyal BUY</div>'
+    f'<div class="val" style="color:var(--green)">{n_buy}</div>'
+    f'<div class="sub">Akumulasi terdeteksi</div></div>', unsafe_allow_html=True)
+with cm3: st.markdown(f'<div class="mcard"><div class="lbl">⚡ MACD PreCross</div>'
+    f'<div class="val" style="color:var(--purple)">{n_macd}</div>'
+    f'<div class="sub">Prioritas masuk</div></div>', unsafe_allow_html=True)
+with cm4: st.markdown(f'<div class="mcard"><div class="lbl">🔄 Reversal Watch</div>'
+    f'<div class="val" style="color:var(--amber)">{n_rev}</div>'
+    f'<div class="sub">Pola pembalikan</div></div>', unsafe_allow_html=True)
+with cm5: st.markdown(f'<div class="mcard"><div class="lbl">⚡ Early Breakout</div>'
+    f'<div class="val" style="color:var(--purple, #ce93d8)">{n_eb}</div>'
+    f'<div class="sub">Fase ekspansi awal</div></div>', unsafe_allow_html=True)
+with cm5: st.markdown(f'<div class="mcard"><div class="lbl">⭐ Conf 5/5</div>'
+    f'<div class="val" style="color:var(--green)">{n_conf5}</div>'
+    f'<div class="sub">Konfluensi sempurna</div></div>', unsafe_allow_html=True)
+with cm6:
+    if n_sc > 0 and 'CVI' in df_screener.columns:
+        # Prioritas: Conf Score 5 → MACD Pre-Cross → CVI tertinggi
+        if n_conf5 > 0:
+            top = df_screener[df_screener['Conf_Score'] == 5].sort_values(
+                'CVI', ascending=False).iloc[0]
+            top_tag = ' ⭐'
+        else:
+            macd_s = df_screener[df_screener['MACD_PreCross'] == True] \
+                if 'MACD_PreCross' in df_screener.columns else pd.DataFrame()
+            top = macd_s.sort_values('CVI', ascending=False).iloc[0] \
+                if not macd_s.empty else df_screener.sort_values('CVI', ascending=False).iloc[0]
+            top_tag = ' ⚡' if not macd_s.empty else ''
+        tier  = fmt_val(top.get('CVI_Tier', '—'))
+        st.markdown(f"""<div class="mcard">
+            <div class="lbl">🥇 Top Priority{top_tag}</div>
+            <div class="val" style="color:var(--amber);font-size:17px;">{top.get('Ticker','—')}</div>
+            <div class="sub">CVI {fmt_val(top.get('CVI','—'))} [{tier}]
+            · {fmt_val(top.get('Potensial_Upsize','—'))}</div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="mcard"><div class="lbl">Top Priority</div>'
+                    '<div class="val">—</div></div>', unsafe_allow_html=True)
+with cm7:
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    if st.button('🔄 Refresh Data', use_container_width=True, key='refresh_dragon'):
         st.cache_data.clear(); st.rerun()
 
-    # Status block
-    st.markdown(f"""<div style="margin-top:8px;padding:10px 12px;
-background:var(--bg-base);border:1px solid var(--border);border-radius:8px;">
-<div style="font-size:9px;font-weight:700;text-transform:uppercase;
-letter-spacing:1px;color:var(--text-3);margin-bottom:6px;">Status Live</div>
-<div class="sb-row"><span>Screener</span>
-  <span style="color:var(--fire);font-weight:700">{n_sc}</span></div>
-<div class="sb-row"><span>BUY Signal</span>
-  <span style="color:var(--green);font-weight:700">{n_buy}</span></div>
-<div class="sb-row"><span>MACD Pre-Cross</span>
-  <span style="color:var(--purple);font-weight:700">{n_macd}</span></div>
-<div class="sb-row"><span>Reversal</span>
-  <span style="color:var(--amber);font-weight:700">{n_rev}</span></div>
-<div class="sb-row"><span>Conf 5/5 ⭐</span>
-  <span style="color:var(--green);font-weight:700">{n_conf5}</span></div>
-<div class="sb-row"><span>Alert 🚨</span>
-  <span style="color:var(--red);font-weight:700">{n_alert}</span></div>
-</div>
-<div style="margin-top:6px;font-size:9px;color:var(--text-3);
-text-align:center;padding-bottom:4px;">Dragon Fire v5.1 · KangTao</div>
-""", unsafe_allow_html=True)
+# ── Sidebar ───────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown('<div class="sb-logo">🐉 Dragon Fire</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sb-sect">STATUS LIVE</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">Screener Aktif</div>'
+        f'<div class="val" style="color:var(--fire)">{n_sc}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">Sinyal BUY</div>'
+        f'<div class="val" style="color:var(--green)">{n_buy}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">⚡ MACD PreCross</div>'
+        f'<div class="val" style="color:var(--purple)">{n_macd}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">🔄 Reversal Watch</div>'
+        f'<div class="val" style="color:var(--amber)">{n_rev}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">⭐ Conf Score 5/5</div>'
+        f'<div class="val" style="color:var(--green)">{n_conf5}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">🚨 Alert Aktif</div>'
+        f'<div class="val" style="color:var(--red)">{n_alert}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">Master Database</div>'
+        f'<div class="val">{n_all} emiten</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sb-stat"><div class="lbl">Riwayat Tersimpan</div>'
+        f'<div class="val">{n_hist} hari</div></div>', unsafe_allow_html=True)
+    st.markdown('---')
+    st.caption(f'Dragon Fire v5.0 · KangTao Cari Cuan\n\n{now_str}')
 
-PAGE = st.session_state.get("active_page", "live_screener")
+# ══════════════════════════════════════════════════════
+# 6. MAIN TABS
+# ══════════════════════════════════════════════════════
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    '📊  LIVE SCREENER',
+    '📋  WATCHLIST',
+    '💼  PORTOFOLIO SAYA',
+    '👁  MONITOR',
+    '🔍  DIAGNOSTIK TICKER',
+    '📅  HISTORI HARIAN',
+    '🔄  HISTORI REVERSAL',
+    '⚡  HISTORI BREAKOUT',
+    '⚡  EARLY BREAKOUT',
+])
 
-# ─── GLOBAL PAGE HEADER ────────────────────────────────────────────────
-_PAGE_META = {
-    "live_screener":   ("📊","🐉 Dragon Screener — Live",
-                        "Screener akumulasi utama · BB ≤15% · CMF + UD Vol terkonfirmasi",""),
-    "watchlist":       ("📋","Watchlist Harian",
-                        "Upload file watchlist untuk evaluasi massal",""),
-    "portfolio":       ("💼","Portfolio Saya",
-                        "Monitor posisi aktif dengan alert real-time",""),
-    "monitor":         ("👁","Monitor Manual",
-                        "Daftar saham pantauan tambahan di luar screener",""),
-    "diagnostik":      ("🔍","Diagnostik Ticker",
-                        "Analisis mendalam satu emiten secara individual",""),
-    "early_breakout":  ("⚡","Early Breakout — Live",
-                        "BB 15-40% · Fresh Expand wajib · CMF ≥0.15 · VV 1.3-2.0 · Priority 111-120","eb"),
-    "reversal_live":   ("🔄","Reversal Watch — Live",
-                        "Saham koreksi dalam dengan sinyal teknikal berbalik naik","rev"),
-    "histori_harian":  ("📅","Histori Harian Screener",
-                        "Arsip snapshot harian master database screener","hist"),
-    "histori_reversal":("🔄","Histori Reversal Watch",
-                        "Arsip harian kandidat reversal","hist"),
-    "histori_breakout":("⚡","Histori Early Breakout",
-                        "Arsip harian sinyal early breakout","hist"),
-}
-_ico, _ttl, _sub, _var = _PAGE_META.get(PAGE, ("📊","Dragon Fire","",""))
-_hcls = {"eb":"pg-hdr-eb","rev":"pg-hdr-rev","hist":"pg-hdr-hist"}.get(_var,"")
-_tcls = {"eb":"ph-title-eb","rev":"ph-title-rev","hist":"ph-title-hist"}.get(_var,"")
-st.markdown(f"""<div class="pg-hdr {_hcls}">
-  <div class="ph-icon">{_ico}</div>
-  <div>
-    <div class="ph-title {_tcls}">{_ttl}</div>
-    <div class="ph-sub">{_sub} &nbsp;·&nbsp; {now_str}</div>
-  </div>
-</div>""", unsafe_allow_html=True)
+# TAB 1 · LIVE SCREENER
+# ─────────────────────────────────────────────────────
+with tab1:
+  if df_screener.empty:
+      st.markdown('<div class="abox abox-warn">⚠ Belum ada data screener_live. Jalankan dragon_fire.py terlebih dahulu.</div>', unsafe_allow_html=True)
+  else:
+      # Pisahkan MACD pre-crossover dulu
+      has_macd_col = 'MACD_PreCross' in df_screener.columns
+      df_macd_picks = df_screener[df_screener['MACD_PreCross'] == True].sort_values('CVI', ascending=False) if has_macd_col else pd.DataFrame()
+      df_normal     = df_screener[df_screener['MACD_PreCross'] != True].sort_values('CVI', ascending=False) if has_macd_col else df_screener.sort_values('CVI', ascending=False)
 
-# ─── KPI STRIP (kontekstual per halaman) ──────────────────────────────
-def _kc(cls, lbl, val, sub=""):
-    return (f'<div class="kc {cls}"><div class="kl">{lbl}</div>' +
-            f'<div class="kv">{val}</div><div class="ks">{sub}</div></div>')
+      # MACD Pre-Crossover highlight section
+      if not df_macd_picks.empty:
+          st.markdown('<div class="abox abox-macd">⚡ Saham berikut memiliki MACD Fast Line hampir crossing zero — potensi momentum terkuat hari ini, diprioritaskan untuk masuk posisi.</div>', unsafe_allow_html=True)
+          st.markdown('<div class="slabel">⚡ MACD PRE-CROSSOVER PICKS — PRIORITAS TERTINGGI</div>', unsafe_allow_html=True)
+          macd_cols = st.columns(min(len(df_macd_picks), 4))
+          for i, (_, r) in enumerate(df_macd_picks.head(4).iterrows()):
+              with macd_cols[i]:
+                  af = alert_badge(r.get('Alert_Flag',''))
+                  st.markdown(f"""
+                  <div class="pick macd-pick">
+                    <div class="pick-medal">⚡ MACD Pre-Cross #{i+1}</div>
+                    <div class="pick-name">{r.get('Ticker','—')}</div>
+                    <div class="pick-price">{fmt_price(r.get('Close'))}</div>
+                    <div class="pick-meta">
+                      CVI <strong style="color:var(--amber)">{fmt_val(r.get('CVI'))}</strong>
+                      &nbsp;·&nbsp; {fmt_val(r.get('Potensial_Upsize'))}<br>
+                      ⏱ {fmt_val(r.get('Hari_Ke_Breakout'))}
+                    </div>
+                    {macd_badge()}
+                    {badge(r.get('Rekomendasi_Action',''))}
+                    {af}
+                  </div>""", unsafe_allow_html=True)
+          st.write("")
 
+      # Top 3 regular picks
+      st.markdown('<div class="slabel">🏆 Top CVI Picks — Ranking Hari Ini</div>', unsafe_allow_html=True)
+      top3   = df_normal.head(3)
+      medals = ['g1','g2','g3']
+      ranks  = ['🥇 Alpha #1','🥈 Runner Up','🥉 Momentum']
+      cols3  = st.columns(min(len(top3),3))
+      for i, (_, r) in enumerate(top3.iterrows()):
+          with cols3[i]:
+              af = alert_badge(r.get('Alert_Flag',''))
+              st.markdown(f"""
+              <div class="pick {medals[i]}">
+                <div class="pick-medal">{ranks[i]}</div>
+                <div class="pick-name">{r.get('Ticker','—')}</div>
+                <div class="pick-price">{fmt_price(r.get('Close'))}</div>
+                <div class="pick-meta">CVI <strong style="color:var(--amber)">{fmt_val(r.get('CVI'))}</strong>
+                  &nbsp;·&nbsp; {fmt_val(r.get('Potensial_Upsize'))}<br>⏱ {fmt_val(r.get('Hari_Ke_Breakout'))}</div>
+                {badge(r.get('Rekomendasi_Action',''))}{af}
+              </div>""", unsafe_allow_html=True)
+
+      st.write("")
+      cf1, cf2, cf3 = st.columns([3,2,1.5])
+      with cf1:
+          opts = sorted(df_screener['Rekomendasi_Action'].dropna().unique().tolist())
+          defs = [a for a in opts if any(x in a.upper() for x in ["BUY","SCALP","ACCUMULATION","PANTAU","TIDUR","MACD"])] or opts
+          sel  = st.multiselect("⚡ Filter Rekomendasi", options=opts, default=defs)
+      with cf2:
+          srt_col = st.selectbox("🔃 Urutkan", ['CVI','Close','Vol_Ratio','CMF','MACD'], index=0)
+      with cf3:
+          srt_dir = st.selectbox("Arah", ["Tertinggi ↓","Terendah ↑"], index=0)
+
+      df_d = df_screener.copy()
+      if sel: df_d = df_d[df_d['Rekomendasi_Action'].isin(sel)]
+      if srt_col in df_d.columns:
+          df_d = df_d.sort_values(srt_col, ascending=(srt_dir=="Terendah ↑"))
+
+      # Show alert rows highlighted
+      if 'Alert_Flag' in df_d.columns:
+          n_flagged = df_d['Alert_Flag'].str.len().gt(0).sum()
+          if n_flagged > 0:
+              st.markdown(f'<div class="abox abox-warn">🚨 {n_flagged} emiten dalam tabel ini memiliki alert anti-trap aktif — perhatikan kolom Alert_Flag.</div>', unsafe_allow_html=True)
+
+      st.markdown(f'<div class="slabel">TABEL SCREENER — {len(df_d)} Emiten</div>', unsafe_allow_html=True)
+      dcols = [c for c in ['Ticker','Close','Support','Resistance','BB_Width_Str',
+                            'Vol_Ratio','Vol_Velocity','CMF','UD_Vol_Ratio',
+                            'Hari_Ke_Breakout','Potensial_Upsize','CVI',
+                            'CVI_Tier','Conf_Score','Profit_Target',
+                            'MACD','MACD_PreCross','Alert_Flag',
+                            'Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_d.columns]
+      st.dataframe(df_d[dcols].reset_index(drop=True), use_container_width=True, height=400,
+          column_config={
+              "Ticker":         st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "Close":          st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "CVI":            st.column_config.NumberColumn("CVI", format="%.2f"),
+              "CVI_Tier":       st.column_config.TextColumn("CVI Tier", width=80),
+              "Conf_Score":     st.column_config.ProgressColumn("⭐ Conf", min_value=0, max_value=5, format="%.0f"),
+              "Profit_Target":  st.column_config.NumberColumn("🎯 Target Harga", format="Rp %,.0f"),
+              "Vol_Ratio":      st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
+              "MACD_PreCross":  st.column_config.CheckboxColumn("⚡ MACD"),
+              "Alert_Flag":     st.column_config.TextColumn("🚨 Alert", width=120),
+              "Rekomendasi_Action": st.column_config.TextColumn("Action", width=200),
+          })
+      st.download_button("⬇️ Download Screener (.xlsx)",
+          data=to_excel(df_d[dcols], "Screener_Live"),
+          file_name=f"DragonFire_Screener_{now_jkt().strftime('%Y%m%d')}.xlsx",
+          mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+      # ── REVERSAL WATCH SECTION ────────────────────────────────
+      st.write("")
+      st.markdown('<div class="section">🔄 REVERSAL WATCH — Saham Pola Pembalikan (di luar screener utama)</div>', unsafe_allow_html=True)
+      if df_reversal.empty:
+          st.markdown('<div class="abox abox-info">💡 Belum ada data reversal_live. Jalankan dragon_fire.py terbaru untuk mengaktifkan fitur ini.</div>', unsafe_allow_html=True)
+      else:
+          st.markdown('<div class="abox abox-warn">🔄 Saham-saham berikut <strong>tidak lolos screener utama</strong> (BB Width lebar = sudah dalam koreksi), namun menunjukkan sinyal pembalikan teknikal. Entry <strong>hanya setelah konfirmasi candle hijau kuat + volume di atas rata-rata.</strong> Urutan berdasarkan <strong>Priority Score</strong> (makin tinggi = makin prioritas).</div>', unsafe_allow_html=True)
+
+          # ── Sort by Priority Score ──────────────────────────────
+          sort_col = 'Rev_Priority' if 'Rev_Priority' in df_reversal.columns else 'Rev_Score'
+          df_rev_show = df_reversal.sort_values(sort_col, ascending=False).reset_index(drop=True)
+
+          # ── IMPROVEMENT #2: Toggle filter RSI ──────────────────
+          col_tog1, col_tog2, _ = st.columns([2, 2, 5])
+          with col_tog1:
+              only_oversold = st.toggle(
+                  '🎯 Hanya RSI < 50 (oversold)', value=False,
+                  help='Aktifkan untuk menyembunyikan kandidat yang RSI-nya tidak oversold')
+          with col_tog2:
+              hide_low_liq = st.toggle(
+                  '💧 Sembunyikan Low Liquidity', value=True,
+                  help='Sembunyikan saham dengan RSI=0 (anomali — tidak diperdagangkan aktif)')
+
+          if only_oversold and 'Rev_RSI' in df_rev_show.columns:
+              df_rev_show = df_rev_show[df_rev_show['Rev_RSI'] < 50]
+          if hide_low_liq and 'Rev_Low_Liquidity' in df_rev_show.columns:
+              df_rev_show = df_rev_show[df_rev_show['Rev_Low_Liquidity'] == False]
+
+          # Warning jika ada kandidat Low Liquidity
+          if 'Rev_Low_Liquidity' in df_reversal.columns:
+              n_low_liq = int(df_reversal['Rev_Low_Liquidity'].sum())
+              if n_low_liq > 0:
+                  liq_tickers = df_reversal[df_reversal['Rev_Low_Liquidity']==True]['Ticker'].tolist()
+                  st.markdown(
+                      f'<div class="abox abox-warn">⚠️ <strong>{n_low_liq} emiten Low Liquidity '
+                      f'(RSI=0/N/A)</strong>: {", ".join(liq_tickers)} — RSI=0 adalah anomali, '
+                      f'bukan oversold. Saham ini hampir tidak diperdagangkan selama ≥14 hari. '
+                      f'Verifikasi volume harian sebelum entry.</div>',
+                      unsafe_allow_html=True)
+
+          # ── Tier filter tabs ────────────────────────────────────
+          tier_counts = {}
+          if 'Rev_Tier' in df_rev_show.columns:
+              tier_counts = df_rev_show['Rev_Tier'].value_counts().to_dict()
+
+          n_strong = tier_counts.get('STRONG REVERSAL', 0)
+          n_watch  = tier_counts.get('REVERSAL WATCH', 0)
+          n_pantau = tier_counts.get('PANTAU REVERSAL', 0)
+
+          # Tier header strip
+          st.markdown(f"""
+          <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+            <div style="background:rgba(0,200,83,.12);border:1px solid rgba(0,200,83,.3);
+                border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--green)">
+              🟢 STRONG REVERSAL: {n_strong}
+            </div>
+            <div style="background:rgba(255,171,0,.12);border:1px solid rgba(255,171,0,.3);
+                border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--amber)">
+              🟡 REVERSAL WATCH: {n_watch}
+            </div>
+            <div style="background:rgba(96,125,139,.12);border:1px solid rgba(96,125,139,.3);
+                border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--muted)">
+              ⚪ PANTAU: {n_pantau}
+            </div>
+          </div>""", unsafe_allow_html=True)
+
+          # ── Top 3 priority cards ────────────────────────────────
+          rev_top = df_rev_show.head(3)
+          if len(rev_top) > 0:
+              rev_cols_card = st.columns(min(3, len(rev_top)))
+              for i, (_, r) in enumerate(rev_top.iterrows()):
+                  with rev_cols_card[i]:
+                      tier    = str(r.get('Rev_Tier', 'REVERSAL WATCH'))
+                      t_color = 'var(--green)' if 'STRONG' in tier else \
+                                ('var(--amber)' if 'WATCH' in tier else 'var(--muted)')
+                      t_icon  = '🟢' if 'STRONG' in tier else ('🟡' if 'WATCH' in tier else '⚪')
+                      drw     = fmt_val(r.get('Rev_Drawdown', '—'))
+                      rsi     = fmt_val(r.get('Rev_RSI', '—'))
+                      scr     = int(r.get('Rev_Score', 0) or 0)
+                      prio    = fmt_val(r.get('Rev_Priority', '—'))
+                      div_ok  = bool(r.get('Rev_Divergence', False))
+                      vol_ok  = bool(r.get('Rev_VolConfirm', False))
+                      st.markdown(f"""
+                      <div style="background:var(--bg-card);border:1px solid {t_color.replace('var(--green)','rgba(0,200,83,.35)').replace('var(--amber)','rgba(255,171,0,.35)').replace('var(--muted)','rgba(96,125,139,.35)')};
+                          border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;">
+                        <div style="position:absolute;top:0;left:0;right:0;height:2.5px;
+                            background:{t_color};"></div>
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                          <span style="font-size:22px;font-weight:800;font-family:var(--mono)">{r.get('Ticker','—')}</span>
+                          <span style="font-size:11px;font-weight:700;color:{t_color}">{t_icon} {tier.replace('REVERSAL','').replace('STRONG','STRONG').strip()}</span>
+                        </div>
+                        <div style="font-size:13px;font-weight:700;color:var(--blue)">Rp {fmt_price(r.get('Close','—'))}</div>
+                        <div style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.9;">
+                          Koreksi <strong style="color:var(--red)">{drw}%</strong>
+                          &nbsp;·&nbsp; RSI <strong style="color:var(--amber)">{rsi}</strong><br>
+                          Rev Score <strong style="color:{t_color}">{scr}/5</strong>
+                          &nbsp;·&nbsp; Priority <strong style="color:{t_color}">{prio}</strong><br>
+                          CMF <strong>{fmt_val(r.get('CMF','—'))}</strong>
+                          &nbsp;·&nbsp; UD Vol <strong>{fmt_val(r.get('UD_Vol_Ratio','—'))}</strong><br>
+                          {'✅ Divergence ' if div_ok else ''}{'✅ Vol Confirmed' if vol_ok else ''}
+                        </div>
+                      </div>""", unsafe_allow_html=True)
+
+          # ── Full reversal table ─────────────────────────────────
+          st.write("")
+          rev_tbl_cols = [c for c in [
+              'Ticker','Close','Rev_Tier','Rev_Priority','Rev_Score',
+              'Rev_Drawdown','Rev_RSI','CMF','UD_Vol_Ratio',
+              'MACD_Slope','Rev_Divergence','Rev_VolConfirm',
+              'Rev_Low_Liquidity','BB_Width_Str','Vol_Ratio','Support','Resistance'
+          ] if c in df_rev_show.columns]
+
+          if rev_tbl_cols:
+              st.dataframe(
+                  df_rev_show[rev_tbl_cols].reset_index(drop=True),
+                  use_container_width=True, height=350,
+                  column_config={
+                      "Ticker":           st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                      "Close":            st.column_config.NumberColumn("Close",       format="Rp %,.0f"),
+                      "Rev_Tier":         st.column_config.TextColumn("Tier",          width=120),
+                      "Rev_Priority":     st.column_config.ProgressColumn("🏆 Priority", min_value=0, max_value=100, format="%.1f"),
+                      "Rev_Score":        st.column_config.ProgressColumn("Rev Score",  min_value=0, max_value=5, format="%.0f"),
+                      "Rev_Drawdown":     st.column_config.NumberColumn("Koreksi %",   format="%.2f%%"),
+                      "Rev_RSI":          st.column_config.NumberColumn("RSI",         format="%.2f"),
+                      "CMF":              st.column_config.NumberColumn("CMF",         format="%.2f"),
+                      "UD_Vol_Ratio":     st.column_config.NumberColumn("UD Vol",      format="%.2f"),
+                      "MACD_Slope":       st.column_config.NumberColumn("MACD Slope",  format="%.2f"),
+                      "Rev_Divergence":   st.column_config.CheckboxColumn("Divergence"),
+                      "Rev_VolConfirm":   st.column_config.CheckboxColumn("Vol Konfirm"),
+                      "Rev_Low_Liquidity":st.column_config.CheckboxColumn("⚠️ Low Liq"),
+                      "Vol_Ratio":        st.column_config.NumberColumn("Vol Ratio",   format="%.2f"),
+                      "Support":          st.column_config.NumberColumn("Support",     format="Rp %,.0f"),
+                      "Resistance":       st.column_config.NumberColumn("Resistance",  format="Rp %,.0f"),
+                  })
+              st.download_button("⬇️ Download Reversal Watch (.xlsx)",
+                  data=to_excel(df_rev_show[rev_tbl_cols], "Reversal_Watch"),
+                  file_name=f"DragonFire_Reversal_{now_jkt().strftime('%Y%m%d')}.xlsx",
+                  mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ─────────────────────────────────────────────────────
-# PAGE: LIVE_SCREENER
-
-    # Top pick highlight banner
-    if n_sc > 0 and "CVI" in df_screener.columns:
-        if n_conf5 > 0:
-            _top = df_screener[df_screener["Conf_Score"]==5].sort_values("CVI",ascending=False).iloc[0]
-            _tag = "⭐ Conf Score 5/5"
-        else:
-            _ms = df_screener[df_screener.get("MACD_PreCross",pd.Series(dtype=bool))==True] \
-                  if "MACD_PreCross" in df_screener.columns else pd.DataFrame()
-            _top = _ms.sort_values("CVI",ascending=False).iloc[0] if not _ms.empty \
-                   else df_screener.sort_values("CVI",ascending=False).iloc[0]
-            _tag = "⚡ MACD Pre-Cross" if not _ms.empty else "🥇 Top CVI"
-        _tier = fmt_val(_top.get("CVI_Tier","—"))
-        st.markdown(f"""<div style="background:linear-gradient(90deg,var(--fire-dim),
-var(--bg-card));border:1px solid rgba(255,87,34,.3);border-radius:10px;
-padding:11px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;">
-<div>
-  <div style="font-size:9px;font-weight:700;text-transform:uppercase;
-  letter-spacing:1px;color:var(--fire);">{_tag}</div>
-  <div style="font-size:26px;font-weight:800;font-family:var(--mono);
-  color:var(--text);margin:2px 0;">{_top.get("Ticker","—")}</div>
-  <div style="font-size:12px;color:var(--blue);">
-    Rp {fmt_price(_top.get("Close","—"))} &nbsp;·&nbsp;
-    CVI <strong>{fmt_val(_top.get("CVI","—"))}</strong> [{_tier}]
-    &nbsp;·&nbsp; {fmt_val(_top.get("Potensial_Upsize","—"))} upside
-  </div>
-</div></div>""", unsafe_allow_html=True)
-
-
-# ──────────────────────────────────────────────────────
-# PAGE: LIVE_SCREENER
-# ──────────────────────────────────────────────────────
-if PAGE == "live_screener":
-    if df_screener.empty:
-        st.markdown('<div class="abox abox-warn">⚠ Belum ada data screener_live. Jalankan dragon_fire.py terlebih dahulu.</div>', unsafe_allow_html=True)
-    else:
-        # Pisahkan MACD pre-crossover dulu
-        has_macd_col = 'MACD_PreCross' in df_screener.columns
-        df_macd_picks = df_screener[df_screener['MACD_PreCross'] == True].sort_values('CVI', ascending=False) if has_macd_col else pd.DataFrame()
-        df_normal     = df_screener[df_screener['MACD_PreCross'] != True].sort_values('CVI', ascending=False) if has_macd_col else df_screener.sort_values('CVI', ascending=False)
-
-        # MACD Pre-Crossover highlight section
-        if not df_macd_picks.empty:
-            st.markdown('<div class="abox abox-macd">⚡ Saham berikut memiliki MACD Fast Line hampir crossing zero — potensi momentum terkuat hari ini, diprioritaskan untuk masuk posisi.</div>', unsafe_allow_html=True)
-            st.markdown('<div class="slabel">⚡ MACD PRE-CROSSOVER PICKS — PRIORITAS TERTINGGI</div>', unsafe_allow_html=True)
-            macd_cols = st.columns(min(len(df_macd_picks), 4))
-            for i, (_, r) in enumerate(df_macd_picks.head(4).iterrows()):
-                with macd_cols[i]:
-                    af = alert_badge(r.get('Alert_Flag',''))
-                    st.markdown(f"""
-                    <div class="pick macd-pick">
-                      <div class="pick-medal">⚡ MACD Pre-Cross #{i+1}</div>
-                      <div class="pick-name">{r.get('Ticker','—')}</div>
-                      <div class="pick-price">{fmt_price(r.get('Close'))}</div>
-                      <div class="pick-meta">
-                        CVI <strong style="color:var(--amber)">{fmt_val(r.get('CVI'))}</strong>
-                        &nbsp;·&nbsp; {fmt_val(r.get('Potensial_Upsize'))}<br>
-                        ⏱ {fmt_val(r.get('Hari_Ke_Breakout'))}
-                      </div>
-                      {macd_badge()}
-                      {badge(r.get('Rekomendasi_Action',''))}
-                      {af}
-                    </div>""", unsafe_allow_html=True)
-            st.write("")
-
-        # Top 3 regular picks
-        st.markdown('<div class="slabel">🏆 Top CVI Picks — Ranking Hari Ini</div>', unsafe_allow_html=True)
-        top3   = df_normal.head(3)
-        medals = ['g1','g2','g3']
-        ranks  = ['🥇 Alpha #1','🥈 Runner Up','🥉 Momentum']
-        cols3  = st.columns(min(len(top3),3))
-        for i, (_, r) in enumerate(top3.iterrows()):
-            with cols3[i]:
-                af = alert_badge(r.get('Alert_Flag',''))
-                st.markdown(f"""
-                <div class="pick {medals[i]}">
-                  <div class="pick-medal">{ranks[i]}</div>
-                  <div class="pick-name">{r.get('Ticker','—')}</div>
-                  <div class="pick-price">{fmt_price(r.get('Close'))}</div>
-                  <div class="pick-meta">CVI <strong style="color:var(--amber)">{fmt_val(r.get('CVI'))}</strong>
-                    &nbsp;·&nbsp; {fmt_val(r.get('Potensial_Upsize'))}<br>⏱ {fmt_val(r.get('Hari_Ke_Breakout'))}</div>
-                  {badge(r.get('Rekomendasi_Action',''))}{af}
-                </div>""", unsafe_allow_html=True)
-
-        st.write("")
-        cf1, cf2, cf3 = st.columns([3,2,1.5])
-        with cf1:
-            opts = sorted(df_screener['Rekomendasi_Action'].dropna().unique().tolist())
-            defs = [a for a in opts if any(x in a.upper() for x in ["BUY","SCALP","ACCUMULATION","PANTAU","TIDUR","MACD"])] or opts
-            sel  = st.multiselect("⚡ Filter Rekomendasi", options=opts, default=defs)
-        with cf2:
-            srt_col = st.selectbox("🔃 Urutkan", ['CVI','Close','Vol_Ratio','CMF','MACD'], index=0)
-        with cf3:
-            srt_dir = st.selectbox("Arah", ["Tertinggi ↓","Terendah ↑"], index=0)
-
-        df_d = df_screener.copy()
-        if sel: df_d = df_d[df_d['Rekomendasi_Action'].isin(sel)]
-        if srt_col in df_d.columns:
-            df_d = df_d.sort_values(srt_col, ascending=(srt_dir=="Terendah ↑"))
-
-        # Show alert rows highlighted
-        if 'Alert_Flag' in df_d.columns:
-            n_flagged = df_d['Alert_Flag'].str.len().gt(0).sum()
-            if n_flagged > 0:
-                st.markdown(f'<div class="abox abox-warn">🚨 {n_flagged} emiten dalam tabel ini memiliki alert anti-trap aktif — perhatikan kolom Alert_Flag.</div>', unsafe_allow_html=True)
-
-        st.markdown(f'<div class="slabel">TABEL SCREENER — {len(df_d)} Emiten</div>', unsafe_allow_html=True)
-        dcols = [c for c in ['Ticker','Close','Support','Resistance','BB_Width_Str',
-                              'Vol_Ratio','Vol_Velocity','CMF','UD_Vol_Ratio',
-                              'Hari_Ke_Breakout','Potensial_Upsize','CVI',
-                              'CVI_Tier','Conf_Score','Profit_Target',
-                              'MACD','MACD_PreCross','Alert_Flag',
-                              'Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_d.columns]
-        st.dataframe(df_d[dcols].reset_index(drop=True), use_container_width=True, height=400,
-            column_config={
-                "Ticker":         st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                "Close":          st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                "CVI":            st.column_config.NumberColumn("CVI", format="%.2f"),
-                "CVI_Tier":       st.column_config.TextColumn("CVI Tier", width=80),
-                "Conf_Score":     st.column_config.ProgressColumn("⭐ Conf", min_value=0, max_value=5, format="%.0f"),
-                "Profit_Target":  st.column_config.NumberColumn("🎯 Target Harga", format="Rp %,.0f"),
-                "Vol_Ratio":      st.column_config.ProgressColumn("Vol Ratio", min_value=0, max_value=5, format="%.2f"),
-                "MACD_PreCross":  st.column_config.CheckboxColumn("⚡ MACD"),
-                "Alert_Flag":     st.column_config.TextColumn("🚨 Alert", width=120),
-                "Rekomendasi_Action": st.column_config.TextColumn("Action", width=200),
-            })
-        st.download_button("⬇️ Download Screener (.xlsx)",
-            data=to_excel(df_d[dcols], "Screener_Live"),
-            file_name=f"DragonFire_Screener_{now_jkt().strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# ──────────────────────────────────────────────────────
-# PAGE: REVERSAL_LIVE
-# ──────────────────────────────────────────────────────
-if PAGE == "reversal_live":
-    # ── REVERSAL WATCH SECTION ────────────────────────────────
-    st.write("")
-    st.markdown('<div class="section">🔄 REVERSAL WATCH — Saham Pola Pembalikan (di luar screener utama)</div>', unsafe_allow_html=True)
-    if df_reversal.empty:
-        st.markdown('<div class="abox abox-info">💡 Belum ada data reversal_live. Jalankan dragon_fire.py terbaru untuk mengaktifkan fitur ini.</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="abox abox-warn">🔄 Saham-saham berikut <strong>tidak lolos screener utama</strong> (BB Width lebar = sudah dalam koreksi), namun menunjukkan sinyal pembalikan teknikal. Entry <strong>hanya setelah konfirmasi candle hijau kuat + volume di atas rata-rata.</strong> Urutan berdasarkan <strong>Priority Score</strong> (makin tinggi = makin prioritas).</div>', unsafe_allow_html=True)
-
-        # ── Sort by Priority Score ──────────────────────────────
-        sort_col = 'Rev_Priority' if 'Rev_Priority' in df_reversal.columns else 'Rev_Score'
-        df_rev_show = df_reversal.sort_values(sort_col, ascending=False).reset_index(drop=True)
-
-        # ── IMPROVEMENT #2: Toggle filter RSI ──────────────────
-        col_tog1, col_tog2, _ = st.columns([2, 2, 5])
-        with col_tog1:
-            only_oversold = st.toggle(
-                '🎯 Hanya RSI < 50 (oversold)', value=False,
-                help='Aktifkan untuk menyembunyikan kandidat yang RSI-nya tidak oversold')
-        with col_tog2:
-            hide_low_liq = st.toggle(
-                '💧 Sembunyikan Low Liquidity', value=True,
-                help='Sembunyikan saham dengan RSI=0 (anomali — tidak diperdagangkan aktif)')
-
-        if only_oversold and 'Rev_RSI' in df_rev_show.columns:
-            df_rev_show = df_rev_show[df_rev_show['Rev_RSI'] < 50]
-        if hide_low_liq and 'Rev_Low_Liquidity' in df_rev_show.columns:
-            df_rev_show = df_rev_show[df_rev_show['Rev_Low_Liquidity'] == False]
-
-        # Warning jika ada kandidat Low Liquidity
-        if 'Rev_Low_Liquidity' in df_reversal.columns:
-            n_low_liq = int(df_reversal['Rev_Low_Liquidity'].sum())
-            if n_low_liq > 0:
-                liq_tickers = df_reversal[df_reversal['Rev_Low_Liquidity']==True]['Ticker'].tolist()
-                st.markdown(
-                    f'<div class="abox abox-warn">⚠️ <strong>{n_low_liq} emiten Low Liquidity '
-                    f'(RSI=0/N/A)</strong>: {", ".join(liq_tickers)} — RSI=0 adalah anomali, '
-                    f'bukan oversold. Saham ini hampir tidak diperdagangkan selama ≥14 hari. '
-                    f'Verifikasi volume harian sebelum entry.</div>',
-                    unsafe_allow_html=True)
-
-        # ── Tier filter tabs ────────────────────────────────────
-        tier_counts = {}
-        if 'Rev_Tier' in df_rev_show.columns:
-            tier_counts = df_rev_show['Rev_Tier'].value_counts().to_dict()
-
-        n_strong = tier_counts.get('STRONG REVERSAL', 0)
-        n_watch  = tier_counts.get('REVERSAL WATCH', 0)
-        n_pantau = tier_counts.get('PANTAU REVERSAL', 0)
-
-        # Tier header strip
-        st.markdown(f"""
-        <div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-          <div style="background:rgba(0,200,83,.12);border:1px solid rgba(0,200,83,.3);
-              border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--green)">
-            🟢 STRONG REVERSAL: {n_strong}
-          </div>
-          <div style="background:rgba(255,171,0,.12);border:1px solid rgba(255,171,0,.3);
-              border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--amber)">
-            🟡 REVERSAL WATCH: {n_watch}
-          </div>
-          <div style="background:rgba(96,125,139,.12);border:1px solid rgba(96,125,139,.3);
-              border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;color:var(--muted)">
-            ⚪ PANTAU: {n_pantau}
-          </div>
-        </div>""", unsafe_allow_html=True)
-
-        # ── Top 3 priority cards ────────────────────────────────
-        rev_top = df_rev_show.head(3)
-        if len(rev_top) > 0:
-            rev_cols_card = st.columns(min(3, len(rev_top)))
-            for i, (_, r) in enumerate(rev_top.iterrows()):
-                with rev_cols_card[i]:
-                    tier    = str(r.get('Rev_Tier', 'REVERSAL WATCH'))
-                    t_color = 'var(--green)' if 'STRONG' in tier else \
-                              ('var(--amber)' if 'WATCH' in tier else 'var(--muted)')
-                    t_icon  = '🟢' if 'STRONG' in tier else ('🟡' if 'WATCH' in tier else '⚪')
-                    drw     = fmt_val(r.get('Rev_Drawdown', '—'))
-                    rsi     = fmt_val(r.get('Rev_RSI', '—'))
-                    scr     = int(r.get('Rev_Score', 0) or 0)
-                    prio    = fmt_val(r.get('Rev_Priority', '—'))
-                    div_ok  = bool(r.get('Rev_Divergence', False))
-                    vol_ok  = bool(r.get('Rev_VolConfirm', False))
-                    st.markdown(f"""
-                    <div style="background:var(--bg-card);border:1px solid {t_color.replace('var(--green)','rgba(0,200,83,.35)').replace('var(--amber)','rgba(255,171,0,.35)').replace('var(--muted)','rgba(96,125,139,.35)')};
-                        border-radius:10px;padding:14px 16px;position:relative;overflow:hidden;">
-                      <div style="position:absolute;top:0;left:0;right:0;height:2.5px;
-                          background:{t_color};"></div>
-                      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                        <span style="font-size:22px;font-weight:800;font-family:var(--mono)">{r.get('Ticker','—')}</span>
-                        <span style="font-size:11px;font-weight:700;color:{t_color}">{t_icon} {tier.replace('REVERSAL','').replace('STRONG','STRONG').strip()}</span>
-                      </div>
-                      <div style="font-size:13px;font-weight:700;color:var(--blue)">Rp {fmt_price(r.get('Close','—'))}</div>
-                      <div style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.9;">
-                        Koreksi <strong style="color:var(--red)">{drw}%</strong>
-                        &nbsp;·&nbsp; RSI <strong style="color:var(--amber)">{rsi}</strong><br>
-                        Rev Score <strong style="color:{t_color}">{scr}/5</strong>
-                        &nbsp;·&nbsp; Priority <strong style="color:{t_color}">{prio}</strong><br>
-                        CMF <strong>{fmt_val(r.get('CMF','—'))}</strong>
-                        &nbsp;·&nbsp; UD Vol <strong>{fmt_val(r.get('UD_Vol_Ratio','—'))}</strong><br>
-                        {'✅ Divergence ' if div_ok else ''}{'✅ Vol Confirmed' if vol_ok else ''}
-                      </div>
-                    </div>""", unsafe_allow_html=True)
-
-        # ── Full reversal table ─────────────────────────────────
-        st.write("")
-        rev_tbl_cols = [c for c in [
-            'Ticker','Close','Rev_Tier','Rev_Priority','Rev_Score',
-            'Rev_Drawdown','Rev_RSI','CMF','UD_Vol_Ratio',
-            'MACD_Slope','Rev_Divergence','Rev_VolConfirm',
-            'Rev_Low_Liquidity','BB_Width_Str','Vol_Ratio','Support','Resistance'
-        ] if c in df_rev_show.columns]
-
-        if rev_tbl_cols:
-            st.dataframe(
-                df_rev_show[rev_tbl_cols].reset_index(drop=True),
-                use_container_width=True, height=350,
-                column_config={
-                    "Ticker":           st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                    "Close":            st.column_config.NumberColumn("Close",       format="Rp %,.0f"),
-                    "Rev_Tier":         st.column_config.TextColumn("Tier",          width=120),
-                    "Rev_Priority":     st.column_config.ProgressColumn("🏆 Priority", min_value=0, max_value=100, format="%.1f"),
-                    "Rev_Score":        st.column_config.ProgressColumn("Rev Score",  min_value=0, max_value=5, format="%.0f"),
-                    "Rev_Drawdown":     st.column_config.NumberColumn("Koreksi %",   format="%.2f%%"),
-                    "Rev_RSI":          st.column_config.NumberColumn("RSI",         format="%.2f"),
-                    "CMF":              st.column_config.NumberColumn("CMF",         format="%.2f"),
-                    "UD_Vol_Ratio":     st.column_config.NumberColumn("UD Vol",      format="%.2f"),
-                    "MACD_Slope":       st.column_config.NumberColumn("MACD Slope",  format="%.2f"),
-                    "Rev_Divergence":   st.column_config.CheckboxColumn("Divergence"),
-                    "Rev_VolConfirm":   st.column_config.CheckboxColumn("Vol Konfirm"),
-                    "Rev_Low_Liquidity":st.column_config.CheckboxColumn("⚠️ Low Liq"),
-                    "Vol_Ratio":        st.column_config.NumberColumn("Vol Ratio",   format="%.2f"),
-                    "Support":          st.column_config.NumberColumn("Support",     format="Rp %,.0f"),
-                    "Resistance":       st.column_config.NumberColumn("Resistance",  format="Rp %,.0f"),
-                })
-            st.download_button("⬇️ Download Reversal Watch (.xlsx)",
-                data=to_excel(df_rev_show[rev_tbl_cols], "Reversal_Watch"),
-                file_name=f"DragonFire_Reversal_{now_jkt().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-    # ─────────────────────────────────────────────────────
-
-# ──────────────────────────────────────────────────────
-# PAGE: EARLY_BREAKOUT
-# ──────────────────────────────────────────────────────
-if PAGE == "early_breakout":
-    # ── KPI Strip ──────────────────────────────────────────────────
-    _n_imm = int((df_breakout["EB_Tier"]=="BREAKOUT IMMINENT").sum()) \
-             if n_eb and "EB_Tier" in df_breakout.columns else 0
-    _n_opt = int((df_breakout["EB_Tier"]=="EARLY BREAKOUT OPTIMAL").sum()) \
-             if n_eb and "EB_Tier" in df_breakout.columns else 0
-    _n_fe  = int(df_breakout["EB_FreshExpand"].sum()) \
-             if n_eb and "EB_FreshExpand" in df_breakout.columns else 0
-    st.markdown('<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
-        _kc("kc-p", "⚡ Total EB",     n_eb,    "Sinyal aktif") +
-        _kc("kc-r", "🔴 Imminent",     _n_imm,  "Breakout segera") +
-        _kc("kc-p", "⭐ EB Optimal",   _n_opt,  "Priority 111-120") +
-        _kc("kc-g", "🌱 Fresh Expand", _n_fe,   "Baru keluar squeeze") +
-        '</div>', unsafe_allow_html=True)
-    # ── Page content ───────────────────────────────────────────────allow_html=True)
-    st.markdown(
-        "<div class='abox abox-warn'>⚡ Saham berikut <strong>baru keluar dari fase akumulasi</strong> "
-        "menuju fase ekspansi. BB Width mulai melebar (15-40%), volume warming up aktif, pembeli dominan. "
-        "Ini adalah deteksi <strong>10-15 hari sebelum</strong> potensi menjadi top gainer. "
-        "Entry setelah konfirmasi candle hijau + volume di atas rata-rata.</div>",
-        unsafe_allow_html=True)
-
-    if df_breakout.empty:
-        st.info("💡 Belum ada data early_breakout_live. Jalankan dragon_fire.py terbaru.")
-    else:
-        eb_show = df_breakout.sort_values("EB_Priority", ascending=False).reset_index(drop=True)
-        n_imm  = int((eb_show["EB_Tier"]=="BREAKOUT IMMINENT").sum()) if "EB_Tier" in eb_show.columns else 0
-        n_ear  = int((eb_show["EB_Tier"]=="EARLY BREAKOUT").sum()) if "EB_Tier" in eb_show.columns else 0
-        n_wat  = int((eb_show["EB_Tier"]=="BREAKOUT WATCH").sum()) if "EB_Tier" in eb_show.columns else 0
-        n_frsh = int(eb_show["EB_FreshExpand"].sum()) if "EB_FreshExpand" in eb_show.columns else 0
-
-        tier_cols = st.columns(4)
-        tier_cols[0].metric("🔴 BREAKOUT IMMINENT", n_imm)
-        tier_cols[1].metric("⚡ EARLY BREAKOUT", n_ear)
-        tier_cols[2].metric("👁 BREAKOUT WATCH", n_wat)
-        tier_cols[3].metric("🌱 Fresh Expand", n_frsh)
-
-        # Top 3 summary cards
-        top3 = eb_show.head(3)
-        if len(top3) > 0:
-            cols3 = st.columns(min(3, len(top3)))
-            for i, (_, r) in enumerate(top3.iterrows()):
-                tier = str(r.get("EB_Tier", ""))
-                fresh_txt = "🌱 Fresh Expand  " if bool(r.get("EB_FreshExpand", False)) else ""
-                prio_val  = fmt_val(r.get("EB_Priority", "—"))
-                with cols3[i]:
-                    st.markdown(f"**{r.get('Ticker','—')}** — {tier}")
-                    st.caption(
-                        f"{fresh_txt}"
-                        f"BB {fmt_val(r.get('BB_Width_Str','—'))} · "
-                        f"VolVel {fmt_val(r.get('Vol_Velocity','—'))} · "
-                        f"CMF {fmt_val(r.get('CMF','—'))} · "
-                        f"Priority {prio_val}"
-                    )
-
-        st.divider()
-        eb_tbl = [c for c in [
-            "Ticker","Close","EB_Tier","EB_Priority","EB_FreshExpand",
-            "BB_Width_Str","Vol_Velocity","Vol_Ratio","CMF","UD_Vol_Ratio",
-            "MACD_PreCross","CVI","Rekomendasi_Action","Support","Resistance"
-        ] if c in eb_show.columns]
-        if eb_tbl:
-            st.dataframe(eb_show[eb_tbl].reset_index(drop=True),
-                use_container_width=True, height=420,
-                column_config={
-                    "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                    "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                    "EB_Tier":       st.column_config.TextColumn("Tier", width=130),
-                    "EB_Priority":   st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
-                    "EB_FreshExpand":st.column_config.CheckboxColumn("🌱 Fresh"),
-                    "Vol_Velocity":  st.column_config.NumberColumn("Vol Vel", format="%.2f"),
-                    "Vol_Ratio":     st.column_config.NumberColumn("Vol Ratio", format="%.2f"),
-                    "CMF":           st.column_config.NumberColumn("CMF", format="%.2f"),
-                    "UD_Vol_Ratio":  st.column_config.NumberColumn("UD Vol", format="%.2f"),
-                    "MACD_PreCross": st.column_config.CheckboxColumn("⚡ PreCross"),
-                    "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
-                    "Support":       st.column_config.NumberColumn("Support", format="Rp %,.0f"),
-                    "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
-                })
-            st.download_button("⬇️ Download Early Breakout (.xlsx)",
-                data=to_excel(eb_show[eb_tbl], "EarlyBreakout"),
-                file_name=f"DragonFire_EarlyBreakout_{now_jkt().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-# ──────────────────────────────────────────────────────
-# PAGE: WATCHLIST
-# ──────────────────────────────────────────────────────
-if PAGE == "watchlist":
+# TAB 2 · WATCHLIST — Upload file harian saja
+# ─────────────────────────────────────────────────────
+with tab2:
     st.markdown('<div class="slabel">📋 Watchlist — Upload File Harian</div>', unsafe_allow_html=True)
 
     # Upload file watchlist harian
@@ -1266,12 +1038,10 @@ if PAGE == "watchlist":
     else:
         st.markdown('<div class="abox abox-warn">💡 Belum ada file yang diupload. Upload file watchlist harian Anda di atas.</div>', unsafe_allow_html=True)
 
-    # ─────────────────────────────────────────────────────
-
-# ──────────────────────────────────────────────────────
-# PAGE: PORTFOLIO
-# ──────────────────────────────────────────────────────
-if PAGE == "portfolio":
+# ─────────────────────────────────────────────────────
+# TAB 3 · PORTOFOLIO SAYA
+# ─────────────────────────────────────────────────────
+with tab3:
     st.markdown('<div class="slabel">💼 Portofolio Saya — Saham yang Sudah Dipegang</div>', unsafe_allow_html=True)
     st.markdown('<div class="abox abox-info">Ticker yang Anda tambahkan di sini akan tersimpan permanen di database dan dipantau setiap hari. Peringatan distribusi akan muncul secara otomatis.</div>', unsafe_allow_html=True)
 
@@ -1417,12 +1187,10 @@ if PAGE == "portfolio":
                     file_name=f"DragonFire_Portfolio_{now_jkt().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-    # ─────────────────────────────────────────────────────
-
-# ──────────────────────────────────────────────────────
-# PAGE: MONITOR
-# ──────────────────────────────────────────────────────
-if PAGE == "monitor":
+# ─────────────────────────────────────────────────────
+# TAB 4 · MONITOR — Saham Pantau Manual
+# ─────────────────────────────────────────────────────
+with tab4:
     st.markdown('<div class="slabel">👁 Monitor — Daftar Saham Pantau Manual</div>', unsafe_allow_html=True)
     st.markdown('<div class="abox abox-info">Tambahkan ticker saham yang ingin Anda pantau secara khusus — bisa dari hasil screening, rekomendasi eksternal, atau saham yang sedang dalam radar Anda. Data diperbarui otomatis setiap kali dragon_fire.py dijalankan.</div>', unsafe_allow_html=True)
 
@@ -1556,266 +1324,333 @@ if PAGE == "monitor":
                     remove_monitor_ticker(t)
                     st.rerun()
 
-    # ─────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────
+# TAB 5 · DIAGNOSTIK TICKER
+# ─────────────────────────────────────────────────────
+with tab5:
+  st.markdown('<div class="slabel">🔍 Diagnostik & Chart Per Emiten</div>', unsafe_allow_html=True)
+  st.markdown(f'<div class="abox abox-info">📡 Basis data: <strong>{n_all} emiten</strong>. Ketik kode saham BEI (tanpa .JK).</div>', unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────────────
-# PAGE: DIAGNOSTIK
-# ──────────────────────────────────────────────────────
-if PAGE == "diagnostik":
-    st.markdown('<div class="slabel">🔍 Diagnostik & Chart Per Emiten</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="abox abox-info">📡 Basis data: <strong>{n_all} emiten</strong>. Ketik kode saham BEI (tanpa .JK).</div>', unsafe_allow_html=True)
+  ci, cb = st.columns([4, 1])
+  with ci:
+      search_ticker = st.text_input("", placeholder="Contoh: BBCA · GLVA · MASB · TLKM ...",
+                                    label_visibility="collapsed").strip().upper()
+  with cb:
+      st.write("")
+      st.button("🔍 Cari", use_container_width=True)
 
-    ci, cb = st.columns([4, 1])
-    with ci:
-        search_ticker = st.text_input("", placeholder="Contoh: BBCA · GLVA · MASB · TLKM ...",
-                                      label_visibility="collapsed").strip().upper()
-    with cb:
-        st.write("")
-        st.button("🔍 Cari", use_container_width=True)
+  if search_ticker:
+      row, src_lbl = get_latest_data_for_ticker(search_ticker)
 
-    if search_ticker:
-        row, src_lbl = get_latest_data_for_ticker(search_ticker)
+      if row:
+          act_cls, act_lbl = classify_action(row.get('Rekomendasi_Action',''))
+          is_macd  = row.get('MACD_PreCross', False)
+          alert_f  = str(row.get('Alert_Flag', ''))
 
-        if row:
-            act_cls, act_lbl = classify_action(row.get('Rekomendasi_Action',''))
-            is_macd  = row.get('MACD_PreCross', False)
-            alert_f  = str(row.get('Alert_Flag', ''))
+          st.markdown(f"""
+          <div class="tick-hdr">
+            <span class="tick-sym">{search_ticker}</span>
+            <span class="badge b-{act_cls}" style="font-size:12px;padding:4px 14px;">{act_lbl}</span>
+            {macd_badge() if is_macd else ''}
+            {alert_badge(alert_f)}
+            <span class="tick-src">{src_lbl}</span>
+          </div>""", unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="tick-hdr">
-              <span class="tick-sym">{search_ticker}</span>
-              <span class="badge b-{act_cls}" style="font-size:12px;padding:4px 14px;">{act_lbl}</span>
-              {macd_badge() if is_macd else ''}
-              {alert_badge(alert_f)}
-              <span class="tick-src">{src_lbl}</span>
-            </div>""", unsafe_allow_html=True)
+          # Alert boxes
+          if 'HINDARI' in str(row.get('Rekomendasi_Action','')).upper() or alert_f:
+              flag_messages = {
+                  'CMF_DROP':       'CMF turun tajam dalam 3 hari — arus uang melemah cepat',
+                  'VOL_SPIKE_DIST': 'Volume meledak disertai CMF negatif — tanda distribusi bandar',
+                  'STAGNANT_SPIKE': 'Harga stagnan lalu volume spike — pola distribusi klasik (seperti GLVA)',
+              }
+              for flag in alert_f.split('|'):
+                  if flag and flag in flag_messages:
+                      st.markdown(f'<div class="abox abox-err">🚨 <strong>ANTI-TRAP ALERT:</strong> {flag_messages[flag]}</div>', unsafe_allow_html=True)
 
-            # Alert boxes
-            if 'HINDARI' in str(row.get('Rekomendasi_Action','')).upper() or alert_f:
-                flag_messages = {
-                    'CMF_DROP':       'CMF turun tajam dalam 3 hari — arus uang melemah cepat',
-                    'VOL_SPIKE_DIST': 'Volume meledak disertai CMF negatif — tanda distribusi bandar',
-                    'STAGNANT_SPIKE': 'Harga stagnan lalu volume spike — pola distribusi klasik (seperti GLVA)',
-                }
-                for flag in alert_f.split('|'):
-                    if flag and flag in flag_messages:
-                        st.markdown(f'<div class="abox abox-err">🚨 <strong>ANTI-TRAP ALERT:</strong> {flag_messages[flag]}</div>', unsafe_allow_html=True)
+          if is_macd:
+              st.markdown(f'<div class="abox abox-macd">⚡ <strong>MACD Pre-Crossover:</strong> Fast line hampir crossing zero dengan slope positif — momentum breakout semakin dekat. Saham ini diprioritaskan untuk entry.</div>', unsafe_allow_html=True)
 
-            if is_macd:
-                st.markdown(f'<div class="abox abox-macd">⚡ <strong>MACD Pre-Crossover:</strong> Fast line hampir crossing zero dengan slope positif — momentum breakout semakin dekat. Saham ini diprioritaskan untuk entry.</div>', unsafe_allow_html=True)
+          st.markdown(f"""
+          <div class="dg">
+            <div class="dc"><div class="k">Harga Terakhir</div><div class="v" style="color:var(--blue)">{fmt_price(row.get('Close'))}</div><div class="h">Harga penutupan</div></div>
+            <div class="dc"><div class="k">Support</div><div class="v" style="color:var(--green)">{fmt_price(row.get('Support'))}</div><div class="h">Low 20 hari</div></div>
+            <div class="dc"><div class="k">Resistance</div><div class="v" style="color:var(--red)">{fmt_price(row.get('Resistance'))}</div><div class="h">High 20 hari</div></div>
+            <div class="dc"><div class="k">BB Width</div><div class="v">{fmt_val(row.get('BB_Width_Str'))}</div><div class="h">Squeeze indicator</div></div>
+            <div class="dc"><div class="k">Vol Ratio</div><div class="v">{fmt_val(row.get('Vol_Ratio'))}</div><div class="h">Vol vs MA20</div></div>
+            <div class="dc"><div class="k">Vol Velocity</div><div class="v">{fmt_val(row.get('Vol_Velocity'))}</div><div class="h">Kecepatan Vol 5h/20h</div></div>
+            <div class="dc"><div class="k">CMF</div><div class="v" style="color:{'var(--green)' if str(row.get('CMF','0')).replace('-','').replace('.','').isdigit() and float(str(row.get('CMF',0)))>0 else 'var(--red)'}">{fmt_val(row.get('CMF'))}</div><div class="h">Chaikin Money Flow</div></div>
+            <div class="dc"><div class="k">UD Vol Ratio</div><div class="v">{fmt_val(row.get('UD_Vol_Ratio'))}</div><div class="h">Up/Down Volume 20h</div></div>
+            <div class="dc"><div class="k">Est. Breakout</div><div class="v">{fmt_val(row.get('Hari_Ke_Breakout'))}</div><div class="h">Prediksi ML</div></div>
+            <div class="dc"><div class="k">Proyeksi Upside</div><div class="v" style="color:var(--green)">{fmt_val(row.get('Potensial_Upsize'))}</div><div class="h">Target kenaikan</div></div>
+            <div class="dc"><div class="k">Skor CVI</div><div class="v" style="color:var(--fire)">{fmt_val(row.get('CVI'))}</div><div class="h">Capital Velocity Index</div></div>
+            <div class="dc"><div class="k">MACD</div><div class="v" style="color:{'var(--purple)' if is_macd else 'var(--text)'}">{fmt_val(row.get('MACD'))}</div><div class="h">{'⚡ Pre-Cross Zero!' if is_macd else 'Fast line'}</div></div>
+            <div class="dc"><div class="k">MACD Slope</div><div class="v">{fmt_val(row.get('MACD_Slope'))}</div><div class="h">Arah 3 hari</div></div>
+              <div class="dc"><div class="k">⭐ Conf Score</div><div class="v" style="color:{'var(--green)' if int(row.get('Conf_Score',0) or 0)>=4 else 'var(--amber)' if int(row.get('Conf_Score',0) or 0)==3 else 'var(--text)'}">{fmt_val(row.get('Conf_Score','—'))}/5</div><div class="h">Konfluensi indikator</div></div>
+              <div class="dc"><div class="k">CVI Tier</div><div class="v" style="color:{'var(--green)' if str(row.get('CVI_Tier',''))=='Tinggi' else 'var(--amber)' if str(row.get('CVI_Tier',''))=='Sedang' else 'var(--text)'}">{fmt_val(row.get('CVI_Tier','—'))}</div><div class="h">Efisiensi modal</div></div>
+              <div class="dc"><div class="k">💰 Target Harga</div><div class="v" style="color:var(--green)">{fmt_price(row.get('Profit_Target'))}</div><div class="h">{fmt_val(row.get('Profit_Target_Pct','—'))}% dari Close · 75% pred ML</div></div>
+              <div class="dc"><div class="k">ADX</div><div class="v" style="color:{'var(--green)' if float(row.get('ADX',0) or 0)>=25 else 'var(--text)'}">{fmt_val(row.get('ADX','—'))}</div><div class="h">{'Trend kuat' if float(row.get('ADX',0) or 0)>=25 else 'Sideways/lemah'}</div></div>
+          </div>""", unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="dg">
-              <div class="dc"><div class="k">Harga Terakhir</div><div class="v" style="color:var(--blue)">{fmt_price(row.get('Close'))}</div><div class="h">Harga penutupan</div></div>
-              <div class="dc"><div class="k">Support</div><div class="v" style="color:var(--green)">{fmt_price(row.get('Support'))}</div><div class="h">Low 20 hari</div></div>
-              <div class="dc"><div class="k">Resistance</div><div class="v" style="color:var(--red)">{fmt_price(row.get('Resistance'))}</div><div class="h">High 20 hari</div></div>
-              <div class="dc"><div class="k">BB Width</div><div class="v">{fmt_val(row.get('BB_Width_Str'))}</div><div class="h">Squeeze indicator</div></div>
-              <div class="dc"><div class="k">Vol Ratio</div><div class="v">{fmt_val(row.get('Vol_Ratio'))}</div><div class="h">Vol vs MA20</div></div>
-              <div class="dc"><div class="k">Vol Velocity</div><div class="v">{fmt_val(row.get('Vol_Velocity'))}</div><div class="h">Kecepatan Vol 5h/20h</div></div>
-              <div class="dc"><div class="k">CMF</div><div class="v" style="color:{'var(--green)' if str(row.get('CMF','0')).replace('-','').replace('.','').isdigit() and float(str(row.get('CMF',0)))>0 else 'var(--red)'}">{fmt_val(row.get('CMF'))}</div><div class="h">Chaikin Money Flow</div></div>
-              <div class="dc"><div class="k">UD Vol Ratio</div><div class="v">{fmt_val(row.get('UD_Vol_Ratio'))}</div><div class="h">Up/Down Volume 20h</div></div>
-              <div class="dc"><div class="k">Est. Breakout</div><div class="v">{fmt_val(row.get('Hari_Ke_Breakout'))}</div><div class="h">Prediksi ML</div></div>
-              <div class="dc"><div class="k">Proyeksi Upside</div><div class="v" style="color:var(--green)">{fmt_val(row.get('Potensial_Upsize'))}</div><div class="h">Target kenaikan</div></div>
-              <div class="dc"><div class="k">Skor CVI</div><div class="v" style="color:var(--fire)">{fmt_val(row.get('CVI'))}</div><div class="h">Capital Velocity Index</div></div>
-              <div class="dc"><div class="k">MACD</div><div class="v" style="color:{'var(--purple)' if is_macd else 'var(--text)'}">{fmt_val(row.get('MACD'))}</div><div class="h">{'⚡ Pre-Cross Zero!' if is_macd else 'Fast line'}</div></div>
-              <div class="dc"><div class="k">MACD Slope</div><div class="v">{fmt_val(row.get('MACD_Slope'))}</div><div class="h">Arah 3 hari</div></div>
-                <div class="dc"><div class="k">⭐ Conf Score</div><div class="v" style="color:{'var(--green)' if int(row.get('Conf_Score',0) or 0)>=4 else 'var(--amber)' if int(row.get('Conf_Score',0) or 0)==3 else 'var(--text)'}">{fmt_val(row.get('Conf_Score','—'))}/5</div><div class="h">Konfluensi indikator</div></div>
-                <div class="dc"><div class="k">CVI Tier</div><div class="v" style="color:{'var(--green)' if str(row.get('CVI_Tier',''))=='Tinggi' else 'var(--amber)' if str(row.get('CVI_Tier',''))=='Sedang' else 'var(--text)'}">{fmt_val(row.get('CVI_Tier','—'))}</div><div class="h">Efisiensi modal</div></div>
-                <div class="dc"><div class="k">💰 Target Harga</div><div class="v" style="color:var(--green)">{fmt_price(row.get('Profit_Target'))}</div><div class="h">{fmt_val(row.get('Profit_Target_Pct','—'))}% dari Close · 75% pred ML</div></div>
-                <div class="dc"><div class="k">ADX</div><div class="v" style="color:{'var(--green)' if float(row.get('ADX',0) or 0)>=25 else 'var(--text)'}">{fmt_val(row.get('ADX','—'))}</div><div class="h">{'Trend kuat' if float(row.get('ADX',0) or 0)>=25 else 'Sideways/lemah'}</div></div>
-            </div>""", unsafe_allow_html=True)
+          st.markdown(f"""
+          <div class="konk">
+            <div class="kt">Kesimpulan Analisis Kuantitatif Dragon Fire AI</div>
+            <div class="kv">{fmt_val(row.get('Analisis_Kesimpulan'))}</div>
+          </div>""", unsafe_allow_html=True)
 
-            st.markdown(f"""
-            <div class="konk">
-              <div class="kt">Kesimpulan Analisis Kuantitatif Dragon Fire AI</div>
-              <div class="kv">{fmt_val(row.get('Analisis_Kesimpulan'))}</div>
-            </div>""", unsafe_allow_html=True)
+          st.markdown('<div class="slabel">📈 Chart Candlestick · BB · Volume · MACD (90 Hari)</div>', unsafe_allow_html=True)
+          render_chart(search_ticker, row)
+      else:
+          st.markdown(f'<div class="abox abox-err">❌ Kode <strong>{search_ticker}</strong> tidak ditemukan.</div>', unsafe_allow_html=True)
+          render_chart(search_ticker)
 
-            st.markdown('<div class="slabel">📈 Chart Candlestick · BB · Volume · MACD (90 Hari)</div>', unsafe_allow_html=True)
-            render_chart(search_ticker, row)
-        else:
-            st.markdown(f'<div class="abox abox-err">❌ Kode <strong>{search_ticker}</strong> tidak ditemukan.</div>', unsafe_allow_html=True)
-            render_chart(search_ticker)
+# ─────────────────────────────────────────────────────
+# TAB 6 · HISTORI HARIAN
+# ─────────────────────────────────────────────────────
+with tab6:
+  st.markdown('<div class="slabel">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
 
-    # ─────────────────────────────────────────────────────
+  if st.button('🔄 Refresh Histori', key='refresh_hist', use_container_width=False):
+      st.cache_data.clear()
+      st.rerun()
 
-# ──────────────────────────────────────────────────────
-# PAGE: HISTORI_HARIAN
-# ──────────────────────────────────────────────────────
-if PAGE == "histori_harian":
-    st.markdown('<div class="slabel">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
+  # ── Fetch dari DB ───────────────────────────────────────────────
+  # Kolom "Tanggal_Scan" (mixed case lama) sudah dihapus dari Supabase.
+  # Sekarang hanya ada tanggal_scan (lowercase) dari data baru.
+  # Data 27 Juni yang lama tidak punya tanggal_scan → akan muncul sebagai NULL
+  # dan akan difilter. Data 28 Juni dan seterusnya akan tampil normal.
+  df_hist_tab = pd.DataFrame()
+  _hist_err   = None
+  try:
+      df_hist_tab = pd.read_sql('SELECT * FROM screener_history', engine)
+  except Exception as _he:
+      _hist_err = str(_he)
 
-    if st.button('🔄 Refresh Histori', key='refresh_hist', use_container_width=False):
-        st.cache_data.clear()
-        st.rerun()
+  if df_hist_tab.empty and _hist_err:
+      st.warning(f"⚠️ DB error: {_hist_err}. Pakai cache lokal.")
+      df_hist_tab = df_history.copy()
 
-    # ── Fetch dari DB ───────────────────────────────────────────────
-    # Kolom "Tanggal_Scan" (mixed case lama) sudah dihapus dari Supabase.
-    # Sekarang hanya ada tanggal_scan (lowercase) dari data baru.
-    # Data 27 Juni yang lama tidak punya tanggal_scan → akan muncul sebagai NULL
-    # dan akan difilter. Data 28 Juni dan seterusnya akan tampil normal.
-    df_hist_tab = pd.DataFrame()
-    _hist_err   = None
-    try:
-        df_hist_tab = pd.read_sql('SELECT * FROM screener_history', engine)
-    except Exception as _he:
-        _hist_err = str(_he)
+  # ── Normalkan via DISPLAY_MAP ────────────────────────────────────
+  df_hist_tab = normalize_columns(df_hist_tab)
 
-    if df_hist_tab.empty and _hist_err:
-        st.warning(f"⚠️ DB error: {_hist_err}. Pakai cache lokal.")
-        df_hist_tab = df_history.copy()
+  # ── Bersihkan Tanggal_Scan ────────────────────────────────────────
+  if not df_hist_tab.empty and 'Tanggal_Scan' in df_hist_tab.columns:
+      df_hist_tab = df_hist_tab.copy()
+      df_hist_tab['Tanggal_Scan'] = (
+          df_hist_tab['Tanggal_Scan']
+          .astype(str).str.strip().str[:10]
+          .replace({'nan':'', 'NaT':'', 'None':''})
+          .replace('', pd.NA)
+      )
+      df_hist_tab = df_hist_tab[df_hist_tab['Tanggal_Scan'].notna()].copy()
 
-    # ── Normalkan via DISPLAY_MAP ────────────────────────────────────
-    df_hist_tab = normalize_columns(df_hist_tab)
-
-    # ── Bersihkan Tanggal_Scan ────────────────────────────────────────
-    if not df_hist_tab.empty and 'Tanggal_Scan' in df_hist_tab.columns:
-        df_hist_tab = df_hist_tab.copy()
-        df_hist_tab['Tanggal_Scan'] = (
-            df_hist_tab['Tanggal_Scan']
-            .astype(str).str.strip().str[:10]
-            .replace({'nan':'', 'NaT':'', 'None':''})
-            .replace('', pd.NA)
-        )
-        df_hist_tab = df_hist_tab[df_hist_tab['Tanggal_Scan'].notna()].copy()
-
-    if df_hist_tab.empty or 'Tanggal_Scan' not in df_hist_tab.columns:
-        st.info('💡 Belum ada rekam histori. Jalankan dragon_fire.py lalu klik Refresh Histori.')
-    else:
-        avail = sorted(df_hist_tab['Tanggal_Scan'].unique().tolist(), reverse=True)
-        hc1, hc2 = st.columns([3, 2])
-        with hc1:
-            sel_date = st.selectbox('📅 Pilih Tanggal:', options=avail)
-        df_hd = (df_hist_tab[df_hist_tab['Tanggal_Scan'] == sel_date]
-                 .drop(columns=['Tanggal_Scan'], errors='ignore')
-                 .reset_index(drop=True))
-        with hc2:
-            st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-            st.download_button(f"⬇️ Download {sel_date} (.xlsx)",
-                data=to_excel(df_hd, f"Histori_{sel_date}"),
-                file_name=f"DragonFire_Histori_{sel_date}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True)
-
-        n_hb = len(df_hd[df_hd['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION",na=False)]) if 'Rekomendasi_Action' in df_hd.columns else 0
-        n_hm = int(df_hd['MACD_PreCross'].sum()) if 'MACD_PreCross' in df_hd.columns else 0
-        n_ha = int(df_hd['Alert_Flag'].str.len().gt(0).sum()) if 'Alert_Flag' in df_hd.columns else 0
-        h1,h2,h3,h4 = st.columns(4)
-        h1.metric("Total Emiten", len(df_hd))
-        h2.metric("Sinyal BUY", n_hb)
-        h3.metric("⚡ MACD PreCross", n_hm)
-        h4.metric("🚨 Alert", n_ha)
-
-        srch = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: BBCA, GLVA ...", key="hist_search").strip().upper()
-        if srch:
-            df_hd = df_hd[df_hd['Ticker'] == srch].reset_index(drop=True)
-
-        hcols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str','Vol_Ratio',
-                              'Hari_Ke_Breakout','Potensial_Upsize','CVI','MACD','MACD_PreCross',
-                              'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_hd.columns]
-        st.dataframe(df_hd[hcols] if hcols else df_hd,
-                     use_container_width=True, height=420,
-            column_config={
-                "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
-                "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
-                "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
-            })
-
-# ──────────────────────────────────────────────────────
-# PAGE: HISTORI_REVERSAL
-# ──────────────────────────────────────────────────────
-if PAGE == "histori_reversal":
-    st.markdown('<div class="slabel">🔄 Histori Reversal Watch</div>', unsafe_allow_html=True)
-    if st.button("🔄 Refresh", key="refresh_rev_hist"):
-        st.cache_data.clear(); st.rerun()
-    df_hx7 = pd.DataFrame()
-    try:
-        df_hx7 = pd.read_sql("SELECT * FROM reversal_history", engine)
-        df_hx7.columns = [str(c).lower().strip() for c in df_hx7.columns]
-        df_hx7 = df_hx7.loc[:, ~df_hx7.columns.duplicated(keep="first")]
-        if "tanggal_scan" in df_hx7.columns:
-            df_hx7 = df_hx7.rename(columns={"tanggal_scan": "Tanggal_Scan"})
-    except Exception as _ex7:
-        st.warning(f"DB error: {_ex7}")
-    if df_hx7.empty or "Tanggal_Scan" not in df_hx7.columns:
-        st.info("💡 Belum ada histori Reversal. Jalankan dragon_fire.py dulu.")
-    else:
-        df_hx7["Tanggal_Scan"] = df_hx7["Tanggal_Scan"].astype(str).str[:10]
-        df_hx7 = df_hx7[df_hx7["Tanggal_Scan"].notna() & (df_hx7["Tanggal_Scan"] != "nan")].copy()
-        avail7 = sorted(df_hx7["Tanggal_Scan"].unique().tolist(), reverse=True)
-        hx7a, hx7b = st.columns([3, 2])
-        with hx7a: sel7 = st.selectbox("📅 Pilih Tanggal:", options=avail7, key="sel_rev_hist")
-        df7 = (df_hx7[df_hx7["Tanggal_Scan"]==sel7]
-               .drop(columns=["Tanggal_Scan"],errors="ignore")
+  if df_hist_tab.empty or 'Tanggal_Scan' not in df_hist_tab.columns:
+      st.info('💡 Belum ada rekam histori. Jalankan dragon_fire.py lalu klik Refresh Histori.')
+  else:
+      avail = sorted(df_hist_tab['Tanggal_Scan'].unique().tolist(), reverse=True)
+      hc1, hc2 = st.columns([3, 2])
+      with hc1:
+          sel_date = st.selectbox('📅 Pilih Tanggal:', options=avail)
+      df_hd = (df_hist_tab[df_hist_tab['Tanggal_Scan'] == sel_date]
+               .drop(columns=['Tanggal_Scan'], errors='ignore')
                .reset_index(drop=True))
-        with hx7b:
-            st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-            st.download_button(f"⬇️ Download {sel7} (.xlsx)",
-                data=to_excel(df7, f"Reversal_{sel7}"),
-                file_name=f"DragonFire_Reversal_{sel7}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True)
-        srch7 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KLIN, BEER ...", key="srch_rev").strip().upper()
-        if srch7:
-            tcol7 = "Ticker" if "Ticker" in df7.columns else "ticker"
-            if tcol7 in df7.columns:
-                df7 = df7[df7[tcol7].str.upper()==srch7].reset_index(drop=True)
-        st.metric("Total Kandidat", len(df7))
-        st.dataframe(df7, use_container_width=True, height=450,
-            column_config={
-                "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-            })
+      with hc2:
+          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+          st.download_button(f"⬇️ Download {sel_date} (.xlsx)",
+              data=to_excel(df_hd, f"Histori_{sel_date}"),
+              file_name=f"DragonFire_Histori_{sel_date}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True)
 
-# ──────────────────────────────────────────────────────
-# PAGE: HISTORI_BREAKOUT
-# ──────────────────────────────────────────────────────
-if PAGE == "histori_breakout":
-    st.markdown('<div class="slabel">⚡ Histori Early Breakout</div>', unsafe_allow_html=True)
-    if st.button("🔄 Refresh", key="refresh_eb_hist"):
-        st.cache_data.clear(); st.rerun()
-    df_hx8 = pd.DataFrame()
-    try:
-        df_hx8 = pd.read_sql("SELECT * FROM breakout_history", engine)
-        df_hx8.columns = [str(c).lower().strip() for c in df_hx8.columns]
-        df_hx8 = df_hx8.loc[:, ~df_hx8.columns.duplicated(keep="first")]
-        if "tanggal_scan" in df_hx8.columns:
-            df_hx8 = df_hx8.rename(columns={"tanggal_scan": "Tanggal_Scan"})
-    except Exception as _ex8:
-        st.warning(f"DB error: {_ex8}")
-    if df_hx8.empty or "Tanggal_Scan" not in df_hx8.columns:
-        st.info("💡 Belum ada histori Early Breakout. Jalankan dragon_fire.py dulu.")
-    else:
-        df_hx8["Tanggal_Scan"] = df_hx8["Tanggal_Scan"].astype(str).str[:10]
-        df_hx8 = df_hx8[df_hx8["Tanggal_Scan"].notna() & (df_hx8["Tanggal_Scan"] != "nan")].copy()
-        avail8 = sorted(df_hx8["Tanggal_Scan"].unique().tolist(), reverse=True)
-        hx8a, hx8b = st.columns([3, 2])
-        with hx8a: sel8 = st.selectbox("📅 Pilih Tanggal:", options=avail8, key="sel_eb_hist")
-        df8 = (df_hx8[df_hx8["Tanggal_Scan"]==sel8]
-               .drop(columns=["Tanggal_Scan"],errors="ignore")
-               .reset_index(drop=True))
-        with hx8b:
-            st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-            st.download_button(f"⬇️ Download {sel8} (.xlsx)",
-                data=to_excel(df8, f"EarlyBreakout_{sel8}"),
-                file_name=f"DragonFire_EarlyBreakout_{sel8}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True)
-        srch8 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KMDS, LPGI ...", key="srch_eb").strip().upper()
-        if srch8:
-            tcol8 = "Ticker" if "Ticker" in df8.columns else "ticker"
-            if tcol8 in df8.columns:
-                df8 = df8[df8[tcol8].str.upper()==srch8].reset_index(drop=True)
-        st.metric("Total Kandidat", len(df8))
-        st.dataframe(df8, use_container_width=True, height=450,
-            column_config={
-                "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-                "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-                "eb_priority": st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
-            })
+      n_hb = len(df_hd[df_hd['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION",na=False)]) if 'Rekomendasi_Action' in df_hd.columns else 0
+      n_hm = int(df_hd['MACD_PreCross'].sum()) if 'MACD_PreCross' in df_hd.columns else 0
+      n_ha = int(df_hd['Alert_Flag'].str.len().gt(0).sum()) if 'Alert_Flag' in df_hd.columns else 0
+      h1,h2,h3,h4 = st.columns(4)
+      h1.metric("Total Emiten", len(df_hd))
+      h2.metric("Sinyal BUY", n_hb)
+      h3.metric("⚡ MACD PreCross", n_hm)
+      h4.metric("🚨 Alert", n_ha)
+
+      srch = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: BBCA, GLVA ...", key="hist_search").strip().upper()
+      if srch:
+          df_hd = df_hd[df_hd['Ticker'] == srch].reset_index(drop=True)
+
+      hcols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str','Vol_Ratio',
+                            'Hari_Ke_Breakout','Potensial_Upsize','CVI','MACD','MACD_PreCross',
+                            'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_hd.columns]
+      st.dataframe(df_hd[hcols] if hcols else df_hd,
+                   use_container_width=True, height=420,
+          column_config={
+              "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
+              "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
+              "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
+          })
+
+
+# TAB 7 · HISTORI REVERSAL
+with tab7:
+  st.markdown('<div class="slabel">🔄 Histori Reversal Watch</div>', unsafe_allow_html=True)
+  if st.button("🔄 Refresh", key="refresh_rev_hist"):
+      st.cache_data.clear(); st.rerun()
+  df_hx7 = pd.DataFrame()
+  try:
+      df_hx7 = pd.read_sql("SELECT * FROM reversal_history", engine)
+      df_hx7.columns = [str(c).lower().strip() for c in df_hx7.columns]
+      df_hx7 = df_hx7.loc[:, ~df_hx7.columns.duplicated(keep="first")]
+      if "tanggal_scan" in df_hx7.columns:
+          df_hx7 = df_hx7.rename(columns={"tanggal_scan": "Tanggal_Scan"})
+  except Exception as _ex7:
+      st.warning(f"DB error: {_ex7}")
+  if df_hx7.empty or "Tanggal_Scan" not in df_hx7.columns:
+      st.info("💡 Belum ada histori Reversal. Jalankan dragon_fire.py dulu.")
+  else:
+      df_hx7["Tanggal_Scan"] = df_hx7["Tanggal_Scan"].astype(str).str[:10]
+      df_hx7 = df_hx7[df_hx7["Tanggal_Scan"].notna() & (df_hx7["Tanggal_Scan"] != "nan")].copy()
+      avail7 = sorted(df_hx7["Tanggal_Scan"].unique().tolist(), reverse=True)
+      hx7a, hx7b = st.columns([3, 2])
+      with hx7a: sel7 = st.selectbox("📅 Pilih Tanggal:", options=avail7, key="sel_rev_hist")
+      df7 = (df_hx7[df_hx7["Tanggal_Scan"]==sel7]
+             .drop(columns=["Tanggal_Scan"],errors="ignore")
+             .reset_index(drop=True))
+      with hx7b:
+          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+          st.download_button(f"⬇️ Download {sel7} (.xlsx)",
+              data=to_excel(df7, f"Reversal_{sel7}"),
+              file_name=f"DragonFire_Reversal_{sel7}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True)
+      srch7 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KLIN, BEER ...", key="srch_rev").strip().upper()
+      if srch7:
+          tcol7 = "Ticker" if "Ticker" in df7.columns else "ticker"
+          if tcol7 in df7.columns:
+              df7 = df7[df7[tcol7].str.upper()==srch7].reset_index(drop=True)
+      st.metric("Total Kandidat", len(df7))
+      st.dataframe(df7, use_container_width=True, height=450,
+          column_config={
+              "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+          })
+
+
+# TAB 8 · HISTORI EARLY BREAKOUT
+with tab8:
+  st.markdown('<div class="slabel">⚡ Histori Early Breakout</div>', unsafe_allow_html=True)
+  if st.button("🔄 Refresh", key="refresh_eb_hist"):
+      st.cache_data.clear(); st.rerun()
+  df_hx8 = pd.DataFrame()
+  try:
+      df_hx8 = pd.read_sql("SELECT * FROM breakout_history", engine)
+      df_hx8.columns = [str(c).lower().strip() for c in df_hx8.columns]
+      df_hx8 = df_hx8.loc[:, ~df_hx8.columns.duplicated(keep="first")]
+      if "tanggal_scan" in df_hx8.columns:
+          df_hx8 = df_hx8.rename(columns={"tanggal_scan": "Tanggal_Scan"})
+  except Exception as _ex8:
+      st.warning(f"DB error: {_ex8}")
+  if df_hx8.empty or "Tanggal_Scan" not in df_hx8.columns:
+      st.info("💡 Belum ada histori Early Breakout. Jalankan dragon_fire.py dulu.")
+  else:
+      df_hx8["Tanggal_Scan"] = df_hx8["Tanggal_Scan"].astype(str).str[:10]
+      df_hx8 = df_hx8[df_hx8["Tanggal_Scan"].notna() & (df_hx8["Tanggal_Scan"] != "nan")].copy()
+      avail8 = sorted(df_hx8["Tanggal_Scan"].unique().tolist(), reverse=True)
+      hx8a, hx8b = st.columns([3, 2])
+      with hx8a: sel8 = st.selectbox("📅 Pilih Tanggal:", options=avail8, key="sel_eb_hist")
+      df8 = (df_hx8[df_hx8["Tanggal_Scan"]==sel8]
+             .drop(columns=["Tanggal_Scan"],errors="ignore")
+             .reset_index(drop=True))
+      with hx8b:
+          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+          st.download_button(f"⬇️ Download {sel8} (.xlsx)",
+              data=to_excel(df8, f"EarlyBreakout_{sel8}"),
+              file_name=f"DragonFire_EarlyBreakout_{sel8}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              use_container_width=True)
+      srch8 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KMDS, LPGI ...", key="srch_eb").strip().upper()
+      if srch8:
+          tcol8 = "Ticker" if "Ticker" in df8.columns else "ticker"
+          if tcol8 in df8.columns:
+              df8 = df8[df8[tcol8].str.upper()==srch8].reset_index(drop=True)
+      st.metric("Total Kandidat", len(df8))
+      st.dataframe(df8, use_container_width=True, height=450,
+          column_config={
+              "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+              "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+              "eb_priority": st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
+          })
+
+
+# TAB 9 · EARLY BREAKOUT LIVE
+with tab9:
+  st.markdown('<div class="slabel">⚡ Early Breakout — Fase Ekspansi Awal</div>', unsafe_allow_html=True)
+  st.markdown(
+      "<div class='abox abox-warn'>⚡ Saham berikut <strong>baru keluar dari fase akumulasi</strong> "
+      "menuju fase ekspansi. BB Width mulai melebar (15-40%), volume warming up aktif, pembeli dominan. "
+      "Ini adalah deteksi <strong>10-15 hari sebelum</strong> potensi menjadi top gainer. "
+      "Entry setelah konfirmasi candle hijau + volume di atas rata-rata.</div>",
+      unsafe_allow_html=True)
+
+  if df_breakout.empty:
+      st.info("💡 Belum ada data early_breakout_live. Jalankan dragon_fire.py terbaru.")
+  else:
+      eb_show = df_breakout.sort_values("EB_Priority", ascending=False).reset_index(drop=True)
+      n_imm  = int((eb_show["EB_Tier"]=="BREAKOUT IMMINENT").sum()) if "EB_Tier" in eb_show.columns else 0
+      n_ear  = int((eb_show["EB_Tier"]=="EARLY BREAKOUT").sum()) if "EB_Tier" in eb_show.columns else 0
+      n_wat  = int((eb_show["EB_Tier"]=="BREAKOUT WATCH").sum()) if "EB_Tier" in eb_show.columns else 0
+      n_frsh = int(eb_show["EB_FreshExpand"].sum()) if "EB_FreshExpand" in eb_show.columns else 0
+
+      tier_cols = st.columns(4)
+      tier_cols[0].metric("🔴 BREAKOUT IMMINENT", n_imm)
+      tier_cols[1].metric("⚡ EARLY BREAKOUT", n_ear)
+      tier_cols[2].metric("👁 BREAKOUT WATCH", n_wat)
+      tier_cols[3].metric("🌱 Fresh Expand", n_frsh)
+
+      # Top 3 summary cards
+      top3 = eb_show.head(3)
+      if len(top3) > 0:
+          cols3 = st.columns(min(3, len(top3)))
+          for i, (_, r) in enumerate(top3.iterrows()):
+              tier = str(r.get("EB_Tier", ""))
+              fresh_txt = "🌱 Fresh Expand  " if bool(r.get("EB_FreshExpand", False)) else ""
+              prio_val  = fmt_val(r.get("EB_Priority", "—"))
+              with cols3[i]:
+                  st.markdown(f"**{r.get('Ticker','—')}** — {tier}")
+                  st.caption(
+                      f"{fresh_txt}"
+                      f"BB {fmt_val(r.get('BB_Width_Str','—'))} · "
+                      f"VolVel {fmt_val(r.get('Vol_Velocity','—'))} · "
+                      f"CMF {fmt_val(r.get('CMF','—'))} · "
+                      f"Priority {prio_val}"
+                  )
+
+      st.divider()
+      eb_tbl = [c for c in [
+          "Ticker","Close","EB_Tier","EB_Priority","EB_FreshExpand",
+          "BB_Width_Str","Vol_Velocity","Vol_Ratio","CMF","UD_Vol_Ratio",
+          "MACD_PreCross","CVI","Rekomendasi_Action","Support","Resistance"
+      ] if c in eb_show.columns]
+      if eb_tbl:
+          st.dataframe(eb_show[eb_tbl].reset_index(drop=True),
+              use_container_width=True, height=420,
+              column_config={
+                  "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                  "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+                  "EB_Tier":       st.column_config.TextColumn("Tier", width=130),
+                  "EB_Priority":   st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
+                  "EB_FreshExpand":st.column_config.CheckboxColumn("🌱 Fresh"),
+                  "Vol_Velocity":  st.column_config.NumberColumn("Vol Vel", format="%.2f"),
+                  "Vol_Ratio":     st.column_config.NumberColumn("Vol Ratio", format="%.2f"),
+                  "CMF":           st.column_config.NumberColumn("CMF", format="%.2f"),
+                  "UD_Vol_Ratio":  st.column_config.NumberColumn("UD Vol", format="%.2f"),
+                  "MACD_PreCross": st.column_config.CheckboxColumn("⚡ PreCross"),
+                  "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
+                  "Support":       st.column_config.NumberColumn("Support", format="Rp %,.0f"),
+                  "Resistance":    st.column_config.NumberColumn("Resistance", format="Rp %,.0f"),
+              })
+          st.download_button("⬇️ Download Early Breakout (.xlsx)",
+              data=to_excel(eb_show[eb_tbl], "EarlyBreakout"),
+              file_name=f"DragonFire_EarlyBreakout_{now_jkt().strftime('%Y%m%d')}.xlsx",
+              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
