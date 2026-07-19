@@ -285,11 +285,7 @@ def record_new_signals(dragon_candidates, db_engine, today_str):
             if not ticker or ticker in tickers_ongoing:
                 continue  # sudah ada episode berjalan, jangan buat baris baru
 
-            tier = None
-            for t in ['ACCUMULATION BUY', 'STEALTH BUY', 'FAST TRADE']:
-                if t in str(row.get('Rekomendasi_Action', '')):
-                    tier = t
-                    break
+            tier = get_actionable_tier(row.get('Rekomendasi_Action', ''))
             if tier is None:
                 continue  # bukan sinyal BUY (mis. HINDARI/WAIT & SEE ikut ke-scan)
 
@@ -1016,6 +1012,29 @@ def apply_historical_feedback_loop(df_train, folder_output, dict_df_full):
     return df_train
 
 
+# Tier yang dianggap "actionable BUY" -- dipakai konsisten di SELURUH
+# script (filter export, generate grafik, self-eval tracker) supaya
+# tidak ada lagi celah kayak yang ditemukan saat review: cek naif
+# `"BUY" in Rekomendasi_Action` MELEWATKAN "FAST TRADE / BREAKOUT
+# SCALPING" karena teks itu tidak mengandung kata "BUY" sama sekali.
+ACTIONABLE_BUY_TIERS = ['ACCUMULATION BUY', 'STEALTH BUY', 'FAST TRADE']
+
+
+def get_actionable_tier(rekomendasi_action):
+    """Return nama tier ('ACCUMULATION BUY'/'STEALTH BUY'/'FAST TRADE')
+    kalau rekomendasi ini actionable BUY, atau None kalau bukan
+    (WAIT & SEE / PANTAU / HINDARI)."""
+    s = str(rekomendasi_action)
+    for t in ACTIONABLE_BUY_TIERS:
+        if t in s:
+            return t
+    return None
+
+
+def is_actionable_buy_tier(rekomendasi_action):
+    return get_actionable_tier(rekomendasi_action) is not None
+
+
 def generate_kesimpulan(row):
     status  = ""
     status += "Volum Kering. "  if row['Vol_Ratio'] < 0.5  else \
@@ -1394,17 +1413,44 @@ print(f"⚡ Early Breakout candidates: {n_eb} emiten terdeteksi")
 
 
 
-# Screener: filter original + filter likuiditas anti-anomali (BKDP fix)
+# Screener: filter likuiditas anti-anomali (BKDP fix) + kualitas dasar
+#
+# ── FIX BUG (ditemukan saat review): SEBELUMNYA gerbang ini juga
+# mensyaratkan BB_Width <= BB_WIDTH_MAX (15%) di sini, TAPI tier
+# FAST TRADE / BREAKOUT SCALPING di rekomendasi_action_mendalam() justru
+# mensyaratkan BB_Width > 0.20 (20%). Dua syarat itu MATEMATIS TIDAK
+# MUNGKIN terpenuhi bersamaan -- akibatnya FAST TRADE tidak akan PERNAH
+# lolos ke dragon_candidates, walau logic tier-nya sudah benar. Terbukti
+# dari histori: 196 kejadian FAST TRADE, BB_Width-nya selalu di rentang
+# 20%-136% (di luar gerbang lama). Filter BB_Width dihapus dari sini --
+# batasan BB_Width per-tier (<=15% untuk ACCUMULATION/STEALTH, >20%
+# untuk FAST TRADE) sudah ditangani sendiri oleh rekomendasi_action_
+# mendalam(), jadi tidak perlu (dan tidak boleh) dibatasi lagi di
+# gerbang luar ini.
 dragon_candidates = df_latest_global[
-    (df_latest_global['BB_Width']     <= BB_WIDTH_MAX) &
     (df_latest_global['CMF']          >= MIN_CMF) &
     (df_latest_global['UD_Vol_Ratio'] >= MIN_UD_RATIO) &
-    (df_latest_global['Vol_Ratio']    >= MIN_VOL_RATIO)   # ← filter baru: min likuiditas
+    (df_latest_global['Vol_Ratio']    >= MIN_VOL_RATIO)   # filter likuiditas anti-anomali
 ].copy()
 
 if not dragon_candidates.empty:
     dragon_candidates['Analisis_Kesimpulan'] = dragon_candidates.apply(generate_kesimpulan, axis=1)
     dragon_candidates['Rekomendasi_Action']  = dragon_candidates.apply(rekomendasi_action_mendalam, axis=1)
+
+    # ── Filter final: cuma simpan baris yang actionable BUY ────────
+    # Gerbang di atas (CMF/UD_Vol_Ratio/Vol_Ratio) sengaja dilonggarkan
+    # supaya FAST TRADE bisa lolos (lihat catatan di atas), tapi itu
+    # bikin banyak baris WAIT & SEE/HINDARI ikut lolos juga (bukan hasil
+    # yang actionable). Di sinilah baru kita saring ke tag BUY saja --
+    # supaya screener_live/df_excel_simple (yang ditampilkan & disimpan
+    # sebagai "hasil resmi screener") tetap fokus ke kandidat yang
+    # benar-benar actionable, bukan tercampur ribuan baris WAIT & SEE.
+    n_before_tier_filter = len(dragon_candidates)
+    dragon_candidates = dragon_candidates[
+        dragon_candidates['Rekomendasi_Action'].apply(is_actionable_buy_tier)
+    ].copy()
+    print(f"   🎯 Filter tier BUY: {n_before_tier_filter} -> {len(dragon_candidates)} kandidat actionable")
+
     dragon_candidates['Support']          = dragon_candidates['Support'].round(0).astype(int)
     dragon_candidates['Resistance']       = dragon_candidates['Resistance'].round(0).astype(int)
     dragon_candidates['Hari_Ke_Breakout'] = dragon_candidates['Expected_Days'].round(1).astype(str) + ' Hari'
@@ -1545,7 +1591,7 @@ if not dragon_candidates.empty:
         print(f"   💾 Diselamatkan ke: {backup_file}")
 
     for idx, row in dragon_candidates.iterrows():
-        if "BUY" in str(row['Rekomendasi_Action']):
+        if is_actionable_buy_tier(row['Rekomendasi_Action']):
             simpan_grafik(dict_df_full[row['Ticker']], row['Ticker'], "Screener_Lolos")
 
 else:
