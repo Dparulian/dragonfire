@@ -135,6 +135,54 @@ div[data-testid="stMetricValue"]{font-family:var(--mono)!important;font-size:20p
 .tiger-card::after{content:'';position:absolute;top:0;left:0;right:0;height:2.5px;background:linear-gradient(90deg,var(--tiger),#fb923c);}
 #MainMenu,footer,header{visibility:hidden;}
 
+/* ══════════════════════════════════════════════════════
+   MOBILE RESPONSIVENESS — layar <= 640px (HP pada umumnya)
+   Target utama: grid header (cm1-cm7) yang tadinya padat karena
+   .mcard min-width:130px x 7 kolom (~910px minimum) jauh lebih
+   lebar dari layar HP standar (~360-400px). Prinsipnya: (1) izinkan
+   kolom Streamlit WRAP ke baris baru alih-alih dipaksa muat
+   horizontal, (2) kecilkan min-width & padding kartu, (3) kecilkan
+   ukuran font supaya tetap terbaca tanpa perlu scroll horizontal.
+   ══════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+    /* Izinkan st.columns() WRAP ke baris baru, bukan dipaksa sejajar
+       dan jadi kepotong/ke-scroll horizontal */
+    [data-testid="stHorizontalBlock"]{flex-wrap:wrap!important;row-gap:8px;}
+    [data-testid="stHorizontalBlock"]>[data-testid="stColumn"],
+    [data-testid="stHorizontalBlock"]>[data-testid="column"]{
+        min-width:calc(50% - 8px)!important;flex:1 1 calc(50% - 8px)!important;}
+
+    /* Kartu metrik header (mcard) -- lebih ringkas */
+    .mcard{min-width:0;padding:10px 12px;}
+    .mcard .val{font-size:18px;}
+    .mcard .lbl{font-size:9px;}
+    .mcard .sub{font-size:10px;}
+
+    /* Kartu detail (dc) di grid diagnostik/reversal/breakout */
+    .dg{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;}
+    .dc{padding:9px 11px;}
+    .dc .v{font-size:15px;}
+
+    /* Header judul halaman & ticker -- kecilkan biar gak wrap aneh */
+    .hdr{padding:14px 16px;gap:12px;}
+    .hdr-icon{font-size:28px;}
+    .hdr-title{font-size:19px;}
+    .tick-sym{font-size:22px;}
+    .pick-name{font-size:22px;}
+
+    /* Sidebar stat card */
+    .sb-stat .val{font-size:17px;}
+
+    /* Tab navigasi -- lebih rapat biar 8 tab gak makan tempat */
+    .stTabs [data-baseweb="tab"]{font-size:11px!important;padding:10px 10px!important;}
+
+    /* Info/warning box -- padding dikecilkan */
+    .abox{padding:9px 12px;font-size:11px;}
+
+    /* Konten block utama -- kurangi padding sisi biar area lebih lega */
+    .block-container{padding-left:0.75rem!important;padding-right:0.75rem!important;}
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -747,15 +795,13 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════
 # 6. MAIN TABS
 # ══════════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     '📊  LIVE SCREENER',
     '📋  WATCHLIST',
     '💼  PORTOFOLIO SAYA',
     '👁  MONITOR',
     '🔍  DIAGNOSTIK TICKER',
-    '📅  HISTORI HARIAN',
-    '🔄  HISTORI REVERSAL',
-    '⚡  HISTORI BREAKOUT',
+    '📚  HISTORI',
     '⚡  EARLY BREAKOUT',
     '🎯  SELF-EVALUATION',
 ])
@@ -1459,187 +1505,196 @@ with tab5:
           render_chart(search_ticker)
 
 # ─────────────────────────────────────────────────────
-# TAB 6 · HISTORI HARIAN
+# TAB 6 · HISTORI (Harian / Reversal / Early Breakout — konsolidasi)
 # ─────────────────────────────────────────────────────
 with tab6:
-  st.markdown('<div class="slabel">📅 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
+  st.markdown('<div class="slabel">📚 Arsip Histori Pemindaian Pasar BEI</div>', unsafe_allow_html=True)
+  hist_type = st.radio(
+      'Pilih jenis histori:',
+      options=['📅 Harian (Semua Saham)', '🔄 Reversal Watch', '⚡ Early Breakout'],
+      horizontal=True, key='hist_type_selector', label_visibility='collapsed',
+  )
+  st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-  if st.button('🔄 Refresh Histori', key='refresh_hist', use_container_width=False):
-      st.cache_data.clear()
-      st.rerun()
+  if hist_type == '📅 Harian (Semua Saham)':
+    if st.button('🔄 Refresh Histori', key='refresh_hist', use_container_width=False):
+        st.cache_data.clear()
+        st.rerun()
 
-  # ── Fetch dari DB ───────────────────────────────────────────────
-  # Kolom "Tanggal_Scan" (mixed case lama) sudah dihapus dari Supabase.
-  # Sekarang hanya ada tanggal_scan (lowercase) dari data baru.
-  # Data 27 Juni yang lama tidak punya tanggal_scan → akan muncul sebagai NULL
-  # dan akan difilter. Data 28 Juni dan seterusnya akan tampil normal.
-  df_hist_tab = pd.DataFrame()
-  _hist_err   = None
-  try:
-      df_hist_tab = pd.read_sql('SELECT * FROM screener_history', engine)
-  except Exception as _he:
-      _hist_err = str(_he)
+    # ── Fetch dari DB ───────────────────────────────────────────────
+    # Kolom "Tanggal_Scan" (mixed case lama) sudah dihapus dari Supabase.
+    # Sekarang hanya ada tanggal_scan (lowercase) dari data baru.
+    # Data 27 Juni yang lama tidak punya tanggal_scan → akan muncul sebagai NULL
+    # dan akan difilter. Data 28 Juni dan seterusnya akan tampil normal.
+    df_hist_tab = pd.DataFrame()
+    _hist_err   = None
+    try:
+        df_hist_tab = pd.read_sql('SELECT * FROM screener_history', engine)
+    except Exception as _he:
+        _hist_err = str(_he)
 
-  if df_hist_tab.empty and _hist_err:
-      st.warning(f"⚠️ DB error: {_hist_err}. Pakai cache lokal.")
-      df_hist_tab = df_history.copy()
+    if df_hist_tab.empty and _hist_err:
+        st.warning(f"⚠️ DB error: {_hist_err}. Pakai cache lokal.")
+        df_hist_tab = df_history.copy()
 
-  # ── Normalkan via DISPLAY_MAP ────────────────────────────────────
-  df_hist_tab = normalize_columns(df_hist_tab)
+    # ── Normalkan via DISPLAY_MAP ────────────────────────────────────
+    df_hist_tab = normalize_columns(df_hist_tab)
 
-  # ── Bersihkan Tanggal_Scan ────────────────────────────────────────
-  if not df_hist_tab.empty and 'Tanggal_Scan' in df_hist_tab.columns:
-      df_hist_tab = df_hist_tab.copy()
-      df_hist_tab['Tanggal_Scan'] = (
-          df_hist_tab['Tanggal_Scan']
-          .astype(str).str.strip().str[:10]
-          .replace({'nan':'', 'NaT':'', 'None':''})
-          .replace('', pd.NA)
-      )
-      df_hist_tab = df_hist_tab[df_hist_tab['Tanggal_Scan'].notna()].copy()
+    # ── Bersihkan Tanggal_Scan ────────────────────────────────────────
+    if not df_hist_tab.empty and 'Tanggal_Scan' in df_hist_tab.columns:
+        df_hist_tab = df_hist_tab.copy()
+        df_hist_tab['Tanggal_Scan'] = (
+            df_hist_tab['Tanggal_Scan']
+            .astype(str).str.strip().str[:10]
+            .replace({'nan':'', 'NaT':'', 'None':''})
+            .replace('', pd.NA)
+        )
+        df_hist_tab = df_hist_tab[df_hist_tab['Tanggal_Scan'].notna()].copy()
 
-  if df_hist_tab.empty or 'Tanggal_Scan' not in df_hist_tab.columns:
-      st.info('💡 Belum ada rekam histori. Jalankan dragon_fire.py lalu klik Refresh Histori.')
-  else:
-      avail = sorted(df_hist_tab['Tanggal_Scan'].unique().tolist(), reverse=True)
-      hc1, hc2 = st.columns([3, 2])
-      with hc1:
-          sel_date = st.selectbox('📅 Pilih Tanggal:', options=avail)
-      df_hd = (df_hist_tab[df_hist_tab['Tanggal_Scan'] == sel_date]
-               .drop(columns=['Tanggal_Scan'], errors='ignore')
+    if df_hist_tab.empty or 'Tanggal_Scan' not in df_hist_tab.columns:
+        st.info('💡 Belum ada rekam histori. Jalankan dragon_fire.py lalu klik Refresh Histori.')
+    else:
+        avail = sorted(df_hist_tab['Tanggal_Scan'].unique().tolist(), reverse=True)
+        hc1, hc2 = st.columns([3, 2])
+        with hc1:
+            sel_date = st.selectbox('📅 Pilih Tanggal:', options=avail)
+        df_hd = (df_hist_tab[df_hist_tab['Tanggal_Scan'] == sel_date]
+                 .drop(columns=['Tanggal_Scan'], errors='ignore')
+                 .reset_index(drop=True))
+        with hc2:
+            st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+            st.download_button(f"⬇️ Download {sel_date} (.xlsx)",
+                data=to_excel(df_hd, f"Histori_{sel_date}"),
+                file_name=f"DragonFire_Histori_{sel_date}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True)
+
+        n_hb = len(df_hd[df_hd['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION",na=False)]) if 'Rekomendasi_Action' in df_hd.columns else 0
+        n_hm = int(df_hd['MACD_PreCross'].sum()) if 'MACD_PreCross' in df_hd.columns else 0
+        n_ha = int(df_hd['Alert_Flag'].str.len().gt(0).sum()) if 'Alert_Flag' in df_hd.columns else 0
+        h1,h2,h3,h4 = st.columns(4)
+        h1.metric("Total Emiten", len(df_hd))
+        h2.metric("Sinyal BUY", n_hb)
+        h3.metric("⚡ MACD PreCross", n_hm)
+        h4.metric("🚨 Alert", n_ha)
+
+        srch = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: BBCA, GLVA ...", key="hist_search").strip().upper()
+        if srch:
+            df_hd = df_hd[df_hd['Ticker'] == srch].reset_index(drop=True)
+
+        hcols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str','Vol_Ratio',
+                              'Hari_Ke_Breakout','Potensial_Upsize','CVI','MACD','MACD_PreCross',
+                              'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_hd.columns]
+        st.dataframe(df_hd[hcols] if hcols else df_hd,
+                     use_container_width=True, height=420,
+            column_config={
+                "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+                "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
+                "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
+                "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
+            })
+
+
+
+  elif hist_type == '🔄 Reversal Watch':
+    st.markdown('<div class="slabel">🔄 Histori Reversal Watch</div>', unsafe_allow_html=True)
+    if st.button("🔄 Refresh", key="refresh_rev_hist"):
+        st.cache_data.clear(); st.rerun()
+    df_hx7 = pd.DataFrame()
+    try:
+        df_hx7 = pd.read_sql("SELECT * FROM reversal_history", engine)
+        df_hx7.columns = [str(c).lower().strip() for c in df_hx7.columns]
+        df_hx7 = df_hx7.loc[:, ~df_hx7.columns.duplicated(keep="first")]
+        if "tanggal_scan" in df_hx7.columns:
+            df_hx7 = df_hx7.rename(columns={"tanggal_scan": "Tanggal_Scan"})
+    except Exception as _ex7:
+        st.warning(f"DB error: {_ex7}")
+    if df_hx7.empty or "Tanggal_Scan" not in df_hx7.columns:
+        st.info("💡 Belum ada histori Reversal. Jalankan dragon_fire.py dulu.")
+    else:
+        df_hx7["Tanggal_Scan"] = df_hx7["Tanggal_Scan"].astype(str).str[:10]
+        df_hx7 = df_hx7[df_hx7["Tanggal_Scan"].notna() & (df_hx7["Tanggal_Scan"] != "nan")].copy()
+        avail7 = sorted(df_hx7["Tanggal_Scan"].unique().tolist(), reverse=True)
+        hx7a, hx7b = st.columns([3, 2])
+        with hx7a: sel7 = st.selectbox("📅 Pilih Tanggal:", options=avail7, key="sel_rev_hist")
+        df7 = (df_hx7[df_hx7["Tanggal_Scan"]==sel7]
+               .drop(columns=["Tanggal_Scan"],errors="ignore")
                .reset_index(drop=True))
-      with hc2:
-          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-          st.download_button(f"⬇️ Download {sel_date} (.xlsx)",
-              data=to_excel(df_hd, f"Histori_{sel_date}"),
-              file_name=f"DragonFire_Histori_{sel_date}.xlsx",
-              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              use_container_width=True)
-
-      n_hb = len(df_hd[df_hd['Rekomendasi_Action'].str.contains("BUY|ACCUMULATION",na=False)]) if 'Rekomendasi_Action' in df_hd.columns else 0
-      n_hm = int(df_hd['MACD_PreCross'].sum()) if 'MACD_PreCross' in df_hd.columns else 0
-      n_ha = int(df_hd['Alert_Flag'].str.len().gt(0).sum()) if 'Alert_Flag' in df_hd.columns else 0
-      h1,h2,h3,h4 = st.columns(4)
-      h1.metric("Total Emiten", len(df_hd))
-      h2.metric("Sinyal BUY", n_hb)
-      h3.metric("⚡ MACD PreCross", n_hm)
-      h4.metric("🚨 Alert", n_ha)
-
-      srch = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: BBCA, GLVA ...", key="hist_search").strip().upper()
-      if srch:
-          df_hd = df_hd[df_hd['Ticker'] == srch].reset_index(drop=True)
-
-      hcols = [c for c in ['Ticker','Close','CMF','UD_Vol_Ratio','BB_Width_Str','Vol_Ratio',
-                            'Hari_Ke_Breakout','Potensial_Upsize','CVI','MACD','MACD_PreCross',
-                            'Alert_Flag','Analisis_Kesimpulan','Rekomendasi_Action'] if c in df_hd.columns]
-      st.dataframe(df_hd[hcols] if hcols else df_hd,
-                   use_container_width=True, height=420,
-          column_config={
-              "Ticker":        st.column_config.TextColumn("Ticker", width=70, pinned=True),
-              "Close":         st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-              "CVI":           st.column_config.NumberColumn("CVI", format="%.2f"),
-              "MACD_PreCross": st.column_config.CheckboxColumn("⚡ MACD"),
-              "Alert_Flag":    st.column_config.TextColumn("🚨 Alert", width=130),
-          })
+        with hx7b:
+            st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+            st.download_button(f"⬇️ Download {sel7} (.xlsx)",
+                data=to_excel(df7, f"Reversal_{sel7}"),
+                file_name=f"DragonFire_Reversal_{sel7}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True)
+        srch7 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KLIN, BEER ...", key="srch_rev").strip().upper()
+        if srch7:
+            tcol7 = "Ticker" if "Ticker" in df7.columns else "ticker"
+            if tcol7 in df7.columns:
+                df7 = df7[df7[tcol7].str.upper()==srch7].reset_index(drop=True)
+        st.metric("Total Kandidat", len(df7))
+        st.dataframe(df7, use_container_width=True, height=450,
+            column_config={
+                "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+                "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+            })
 
 
-# TAB 7 · HISTORI REVERSAL
+
+  else:  # Early Breakout
+    st.markdown('<div class="slabel">⚡ Histori Early Breakout</div>', unsafe_allow_html=True)
+    if st.button("🔄 Refresh", key="refresh_eb_hist"):
+        st.cache_data.clear(); st.rerun()
+    df_hx8 = pd.DataFrame()
+    try:
+        df_hx8 = pd.read_sql("SELECT * FROM breakout_history", engine)
+        df_hx8.columns = [str(c).lower().strip() for c in df_hx8.columns]
+        df_hx8 = df_hx8.loc[:, ~df_hx8.columns.duplicated(keep="first")]
+        if "tanggal_scan" in df_hx8.columns:
+            df_hx8 = df_hx8.rename(columns={"tanggal_scan": "Tanggal_Scan"})
+    except Exception as _ex8:
+        st.warning(f"DB error: {_ex8}")
+    if df_hx8.empty or "Tanggal_Scan" not in df_hx8.columns:
+        st.info("💡 Belum ada histori Early Breakout. Jalankan dragon_fire.py dulu.")
+    else:
+        df_hx8["Tanggal_Scan"] = df_hx8["Tanggal_Scan"].astype(str).str[:10]
+        df_hx8 = df_hx8[df_hx8["Tanggal_Scan"].notna() & (df_hx8["Tanggal_Scan"] != "nan")].copy()
+        avail8 = sorted(df_hx8["Tanggal_Scan"].unique().tolist(), reverse=True)
+        hx8a, hx8b = st.columns([3, 2])
+        with hx8a: sel8 = st.selectbox("📅 Pilih Tanggal:", options=avail8, key="sel_eb_hist")
+        df8 = (df_hx8[df_hx8["Tanggal_Scan"]==sel8]
+               .drop(columns=["Tanggal_Scan"],errors="ignore")
+               .reset_index(drop=True))
+        with hx8b:
+            st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+            st.download_button(f"⬇️ Download {sel8} (.xlsx)",
+                data=to_excel(df8, f"EarlyBreakout_{sel8}"),
+                file_name=f"DragonFire_EarlyBreakout_{sel8}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True)
+        srch8 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KMDS, LPGI ...", key="srch_eb").strip().upper()
+        if srch8:
+            tcol8 = "Ticker" if "Ticker" in df8.columns else "ticker"
+            if tcol8 in df8.columns:
+                df8 = df8[df8[tcol8].str.upper()==srch8].reset_index(drop=True)
+        st.metric("Total Kandidat", len(df8))
+        st.dataframe(df8, use_container_width=True, height=450,
+            column_config={
+                "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
+                "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+                "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
+                "eb_priority": st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
+            })
+
+
+
+
+# TAB 7 · EARLY BREAKOUT LIVE
 with tab7:
-  st.markdown('<div class="slabel">🔄 Histori Reversal Watch</div>', unsafe_allow_html=True)
-  if st.button("🔄 Refresh", key="refresh_rev_hist"):
-      st.cache_data.clear(); st.rerun()
-  df_hx7 = pd.DataFrame()
-  try:
-      df_hx7 = pd.read_sql("SELECT * FROM reversal_history", engine)
-      df_hx7.columns = [str(c).lower().strip() for c in df_hx7.columns]
-      df_hx7 = df_hx7.loc[:, ~df_hx7.columns.duplicated(keep="first")]
-      if "tanggal_scan" in df_hx7.columns:
-          df_hx7 = df_hx7.rename(columns={"tanggal_scan": "Tanggal_Scan"})
-  except Exception as _ex7:
-      st.warning(f"DB error: {_ex7}")
-  if df_hx7.empty or "Tanggal_Scan" not in df_hx7.columns:
-      st.info("💡 Belum ada histori Reversal. Jalankan dragon_fire.py dulu.")
-  else:
-      df_hx7["Tanggal_Scan"] = df_hx7["Tanggal_Scan"].astype(str).str[:10]
-      df_hx7 = df_hx7[df_hx7["Tanggal_Scan"].notna() & (df_hx7["Tanggal_Scan"] != "nan")].copy()
-      avail7 = sorted(df_hx7["Tanggal_Scan"].unique().tolist(), reverse=True)
-      hx7a, hx7b = st.columns([3, 2])
-      with hx7a: sel7 = st.selectbox("📅 Pilih Tanggal:", options=avail7, key="sel_rev_hist")
-      df7 = (df_hx7[df_hx7["Tanggal_Scan"]==sel7]
-             .drop(columns=["Tanggal_Scan"],errors="ignore")
-             .reset_index(drop=True))
-      with hx7b:
-          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-          st.download_button(f"⬇️ Download {sel7} (.xlsx)",
-              data=to_excel(df7, f"Reversal_{sel7}"),
-              file_name=f"DragonFire_Reversal_{sel7}.xlsx",
-              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              use_container_width=True)
-      srch7 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KLIN, BEER ...", key="srch_rev").strip().upper()
-      if srch7:
-          tcol7 = "Ticker" if "Ticker" in df7.columns else "ticker"
-          if tcol7 in df7.columns:
-              df7 = df7[df7[tcol7].str.upper()==srch7].reset_index(drop=True)
-      st.metric("Total Kandidat", len(df7))
-      st.dataframe(df7, use_container_width=True, height=450,
-          column_config={
-              "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-              "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-              "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-              "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-          })
-
-
-# TAB 8 · HISTORI EARLY BREAKOUT
-with tab8:
-  st.markdown('<div class="slabel">⚡ Histori Early Breakout</div>', unsafe_allow_html=True)
-  if st.button("🔄 Refresh", key="refresh_eb_hist"):
-      st.cache_data.clear(); st.rerun()
-  df_hx8 = pd.DataFrame()
-  try:
-      df_hx8 = pd.read_sql("SELECT * FROM breakout_history", engine)
-      df_hx8.columns = [str(c).lower().strip() for c in df_hx8.columns]
-      df_hx8 = df_hx8.loc[:, ~df_hx8.columns.duplicated(keep="first")]
-      if "tanggal_scan" in df_hx8.columns:
-          df_hx8 = df_hx8.rename(columns={"tanggal_scan": "Tanggal_Scan"})
-  except Exception as _ex8:
-      st.warning(f"DB error: {_ex8}")
-  if df_hx8.empty or "Tanggal_Scan" not in df_hx8.columns:
-      st.info("💡 Belum ada histori Early Breakout. Jalankan dragon_fire.py dulu.")
-  else:
-      df_hx8["Tanggal_Scan"] = df_hx8["Tanggal_Scan"].astype(str).str[:10]
-      df_hx8 = df_hx8[df_hx8["Tanggal_Scan"].notna() & (df_hx8["Tanggal_Scan"] != "nan")].copy()
-      avail8 = sorted(df_hx8["Tanggal_Scan"].unique().tolist(), reverse=True)
-      hx8a, hx8b = st.columns([3, 2])
-      with hx8a: sel8 = st.selectbox("📅 Pilih Tanggal:", options=avail8, key="sel_eb_hist")
-      df8 = (df_hx8[df_hx8["Tanggal_Scan"]==sel8]
-             .drop(columns=["Tanggal_Scan"],errors="ignore")
-             .reset_index(drop=True))
-      with hx8b:
-          st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-          st.download_button(f"⬇️ Download {sel8} (.xlsx)",
-              data=to_excel(df8, f"EarlyBreakout_{sel8}"),
-              file_name=f"DragonFire_EarlyBreakout_{sel8}.xlsx",
-              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              use_container_width=True)
-      srch8 = st.text_input("🔍 Cari Ticker:", placeholder="Contoh: KMDS, LPGI ...", key="srch_eb").strip().upper()
-      if srch8:
-          tcol8 = "Ticker" if "Ticker" in df8.columns else "ticker"
-          if tcol8 in df8.columns:
-              df8 = df8[df8[tcol8].str.upper()==srch8].reset_index(drop=True)
-      st.metric("Total Kandidat", len(df8))
-      st.dataframe(df8, use_container_width=True, height=450,
-          column_config={
-              "ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-              "Ticker": st.column_config.TextColumn("Ticker", width=70, pinned=True),
-              "close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-              "Close":  st.column_config.NumberColumn("Close", format="Rp %,.0f"),
-              "eb_priority": st.column_config.ProgressColumn("Priority", min_value=0, max_value=130, format="%.1f"),
-          })
-
-
-# TAB 9 · EARLY BREAKOUT LIVE
-with tab9:
   st.markdown('<div class="slabel">⚡ Early Breakout — Fase Ekspansi Awal</div>', unsafe_allow_html=True)
   st.markdown(
       "<div class='abox abox-warn'>⚡ Saham berikut <strong>baru keluar dari fase akumulasi</strong> "
@@ -1711,9 +1766,9 @@ with tab9:
               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # ══════════════════════════════════════════════════════
-# TAB 10 · SELF-EVALUATION — WIN RATE & SIGNAL TRACKER
+# TAB 8 · SELF-EVALUATION — WIN RATE & SIGNAL TRACKER
 # ══════════════════════════════════════════════════════
-with tab10:
+with tab8:
   st.markdown("""<div class="abox abox-info">🎯 <strong>Self-Evaluation Engine</strong> — setiap kali
       screener kasih sinyal BUY, sistem otomatis mencatat "janji" itu dan mengecek nasibnya
       SETIAP HARI: apakah sudah mencapai target profit (<strong>HIT_TARGET</strong>), masih berjalan
