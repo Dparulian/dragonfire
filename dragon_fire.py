@@ -1499,7 +1499,7 @@ if not dragon_candidates.empty:
                     'Rekomendasi_Action', 'Analisis_Kesimpulan', 'Alert_Flag',
                     'Rev_Score', 'Rev_Priority', 'Rev_Tier',
                     'Rev_Drawdown', 'Rev_RSI', 'Rev_StochRSI',
-                    'Rev_Divergence', 'Rev_VolConfirm', 'Rev_Low_Liquidity',
+                    'Rev_Divergence', 'Rev_VolConfirm', 'Rev_ADX_Weak', 'Rev_Low_Liquidity',
                     'Support', 'Resistance',
                 ] if c in reversal_candidates.columns]
                 rev_export = reversal_candidates[rev_cols].copy()
@@ -1540,7 +1540,7 @@ if not dragon_candidates.empty:
                     'CMF', 'UD_Vol_Ratio', 'MACD', 'MACD_Slope', 'MACD_PreCross',
                     'Rev_Score', 'Rev_Priority', 'Rev_Tier',
                     'Rev_Drawdown', 'Rev_RSI', 'Rev_StochRSI',
-                    'Rev_Divergence', 'Rev_VolConfirm', 'Rev_Low_Liquidity',
+                    'Rev_Divergence', 'Rev_VolConfirm', 'Rev_ADX_Weak', 'Rev_Low_Liquidity',
                     'Support', 'Resistance',
                 ] if c in reversal_candidates.columns]
                 save_snapshot_history(
